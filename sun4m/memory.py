@@ -1,10 +1,6 @@
 class MemorySegment:
     """Represents a virtual address space segment of contiguous memory"""
 
-    start: int
-    end: int
-    buffer: bytearray
-
     def __init__(self, start, size):
         self.start = start
         self.end = start + size
@@ -14,10 +10,8 @@ class MemorySegment:
 class SystemMemory:
     """Represents address space"""
 
-    _segments: dict[int, MemorySegment]
-
     def __init__(self):
-        self._segments = dict()
+        self._segments: dict[int, MemorySegment] = dict()
 
     def add_segment(self, start, size) -> MemorySegment | None:
         """add segment given a start address and size"""

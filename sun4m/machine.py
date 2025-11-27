@@ -2,10 +2,9 @@ from .memory import SystemMemory
 
 
 class Machine:
-    memory: SystemMemory
 
     def __init__(self):
-        self.memory = SystemMemory()
+        self.memory: SystemMemory = SystemMemory()
 
     def load_file(self, file: str) -> None:
         with open(file, "rb") as f:
