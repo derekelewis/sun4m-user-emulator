@@ -13,5 +13,7 @@ TODOs
     - [ ] Decoding
     - [ ] Operations
     - [ ] Cycling
+    - [ ] Testing
 4. Syscalls
     - [ ] Write
+    - [ ] Testing
