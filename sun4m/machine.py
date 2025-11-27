@@ -10,5 +10,9 @@ class Machine:
     def load_file(self, file: str) -> None:
         with open(file, "rb") as f:
             elf_bytes = f.read()
-            self.memory._segments[0x1000].buffer[: len(elf_bytes)] = elf_bytes
-            print(self.memory._segments[0x1000].buffer)
+            s1 = self.memory.add_segment(0x10000, 0x1000)
+            offset = 0
+            if s1:
+                s1.buffer[offset : offset + len(elf_bytes)] = elf_bytes
+            else:
+                raise MemoryError("segment allocation failure")
