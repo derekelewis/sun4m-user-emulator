@@ -16,6 +16,18 @@ class MemoryTestCase(unittest.TestCase):
             self.test_bytes,
         )
 
+    def testMemoryReadCrossSegment(self):
+        machine: Machine = Machine()
+        machine.memory.add_segment(0x100, 0x100)
+        machine.memory.add_segment(0x200, 0x100)
+        with self.assertRaises(MemoryError) as e:
+            _ = machine.memory.read(0x200 - 0x1, 0x10)
+
+    def testMemoryReadInvalidAddress(self):
+        machine: Machine = Machine()
+        with self.assertRaises(MemoryError) as e:
+            machine.memory.read(0x100, 0x10)
+
     def testMemoryWriteCrossSegment(self):
         machine: Machine = Machine()
         machine.memory.add_segment(0x100, 0x100)
