@@ -12,6 +12,7 @@ TODOs
     - [ ] Registers
     - [ ] Decoding
     - [ ] Operations
+    - [ ] Register windows
     - [ ] Cycling
     - [ ] Testing
 4. Syscalls
