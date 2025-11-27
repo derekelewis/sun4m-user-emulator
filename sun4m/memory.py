@@ -19,12 +19,15 @@ class SystemMemory:
     def __init__(self):
         self._segments = dict()
 
-    def add_segment(self, start, size):
-        "add segment given a start address and size"
+    def add_segment(self, start, size) -> MemorySegment | None:
+        """add segment given a start address and size"""
         # only add segment if start doesn't overlap with existing segments
         if not self.segment_for_addr(start):
             segment: MemorySegment = MemorySegment(start, size)
             self._segments[start] = segment
+            return segment
+        else:
+            return None
 
     def segment_for_addr(self, addr: int) -> MemorySegment | None:
         """Retrieve segment given an address"""

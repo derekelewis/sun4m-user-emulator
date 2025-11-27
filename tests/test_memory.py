@@ -7,6 +7,23 @@ class MemoryTestCase(unittest.TestCase):
 
     test_bytes: bytes = "hello, world".encode()
 
+    def testMemorySegmentForAddrFound(self):
+        machine: Machine = Machine()
+        s1 = machine.memory.add_segment(0x100, 0x100)
+        s2 = machine.memory.add_segment(0x200, 0x100)
+        self.assertNotEqual(machine.memory.segment_for_addr(0x111), None)
+        self.assertNotEqual(machine.memory.segment_for_addr(0x111), s2)
+
+    def testMemorySegmentForAddrNotFound(self):
+        machine: Machine = Machine()
+        _ = machine.memory.add_segment(0x100, 0x100)
+        self.assertEqual(machine.memory.segment_for_addr(0x200), None)
+
+    def testMemoryAddSegmentDuplicate(self):
+        machine: Machine = Machine()
+        s1 = machine.memory.add_segment(0x100, 0x100)
+        self.assertEqual(machine.memory.add_segment(0x100, 0x100), None)
+
     def testMemoryWriteRead(self):
         machine: Machine = Machine()
         machine.memory.add_segment(0x100, 0x100)
