@@ -1,4 +1,4 @@
-from instruction import (
+from .instruction import (
     Instruction,
     CallInstruction,
     Format2Instruction,

@@ -7,37 +7,37 @@ class Instruction:
         self.inst = int
 
 
-class CallInstruction:
+class CallInstruction(Instruction):
 
     def __init__(self, inst: int):
         super()
 
-    def decode(): ...
+    def decode(self): ...
 
 
-class Format2Instruction:
-
-    def __init__(self, inst: int):
-        super()
-
-    def decode(): ...
-
-
-class Format3Instruction:
+class Format2Instruction(Instruction):
 
     def __init__(self, inst: int):
         super()
 
-    def decode(): ...
+    def decode(self): ...
+
+
+class Format3Instruction(Instruction):
+
+    def __init__(self, inst: int):
+        super()
+
+    def decode(self): ...
 
 
 class InstructionClass(StrEnum):
-    branch: str = "BRANCH"
-    call: str = "CALL"
-    arithmetic: str = "ARITHMETIC"
-    load_store: str = "LOAD_STORE"
-    trap: str = "TRAP"
-    unknown: str = "UNKNOWN"
+    branch = "BRANCH"
+    call = "CALL"
+    arithmetic = "ARITHMETIC"
+    load_store = "LOAD_STORE"
+    trap = "TRAP"
+    unknown = "UNKNOWN"
 
 
 class DecodedInstruction: ...

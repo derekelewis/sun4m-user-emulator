@@ -1,6 +1,5 @@
 import unittest
 from sun4m.machine import Machine
-from sun4m.memory import SystemMemory
 
 
 class TestMemory(unittest.TestCase):

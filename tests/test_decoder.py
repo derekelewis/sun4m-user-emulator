@@ -1,6 +1,6 @@
 import unittest
-from decoder import decode
-from instruction import CallInstruction, Format2Instruction, Format3Instruction
+from sun4m.decoder import decode
+from sun4m.instruction import CallInstruction, Format2Instruction, Format3Instruction
 
 
 class TestDecoder(unittest.TestCase):
