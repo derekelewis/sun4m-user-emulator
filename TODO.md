@@ -10,8 +10,10 @@ TODOs
     - [ ] Testing
 3. CPU operations
     - [ ] Registers
-    - [ ] Decoding
-    - [ ] Operations
+    - [~] Decoding
+        - [x] Correct routing to CALL, Format2, and Format3
+    - [x] Operations
+        - [x] CALL
     - [ ] Register windows
     - [ ] Cycling
     - [ ] Testing
