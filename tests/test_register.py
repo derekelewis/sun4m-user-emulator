@@ -2,7 +2,7 @@ import unittest
 from sun4m.register import RegisterFile
 
 
-class RegisterTestCase(unittest.TestCase):
+class TestRegister(unittest.TestCase):
 
     def test_g0_return_zero(self):
         window: RegisterFile = RegisterFile()
