@@ -47,7 +47,7 @@ class Format3Instruction(Instruction):
         match self.op3:
             case 0b111100:  # SAVE instruction
                 sp: int = cpu_state.registers.read_register(self.rs1)
-                if self.simm13:
+                if self.i:
                     sp = sp + self.simm13
                 else:
                     sp = sp + cpu_state.registers.read_register(self.rs2)
