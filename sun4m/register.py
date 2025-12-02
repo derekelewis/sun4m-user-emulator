@@ -1,0 +1,38 @@
+class Window:
+
+    def __init__(self):
+        self.i = [0] * 8
+        self.l = [0] * 8
+
+
+class RegisterFile:
+
+    def __init__(self, n_windows: int = 8):
+        self.n_windows: int = n_windows
+        self.windows: list[Window] = [Window() for _ in range(n_windows)]
+        self.g = [0] * 8
+        self.cwp = 0
+
+    def read_register(self, register: int) -> int:
+        if register in range(8):
+            return self.g[register]
+        elif register in range(8, 16):  # outputs
+            return self.windows[self.cwp - 1].i[register - 8]
+        elif register in range(16, 24):  # locals
+            return self.windows[self.cwp].l[register - 16]
+        elif register in range(24, 32):  # inputs
+            return self.windows[self.cwp].i[register - 24]
+        else:
+            raise ValueError("invalid register")
+
+    def write_register(self, register: int, value: int) -> None:
+        if register in range(8):
+            self.g[register] = value
+        elif register in range(8, 16):  # outputs
+            self.windows[self.cwp - 1].i[register - 8] = value
+        elif register in range(16, 24):  # locals
+            self.windows[self.cwp].l[register - 16] = value
+        elif register in range(24, 32):  # inputs
+            self.windows[self.cwp].i[register - 24] = value
+        else:
+            raise ValueError("invalid register")
