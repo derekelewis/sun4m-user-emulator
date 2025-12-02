@@ -12,8 +12,20 @@ TODOs
     - [x] Registers
     - [~] Decoding
         - [x] Correct routing to CALL, Format2, and Format3
-    - [x] Operations
+    - [x] Instructions
         - [x] CALL
+        - [x] SAVE
+        - [x] RESTORE
+        - [ ] NOP
+        - [ ] SETHI
+        - [ ] MOV
+        - [ ] SETHI
+        - [ ] OR
+        - [ ] CLR
+        - [ ] TA
+        - [ ] RETL
+        - [ ] ST
+        - [ ] LD
     - [x] Register windows
         - [x] Windows implemented
         - [x] SAVE Instruction
