@@ -10,8 +10,8 @@ class RegisterFile:
     def __init__(self, n_windows: int = 8):
         self.n_windows: int = n_windows
         self.windows: list[Window] = [Window() for _ in range(n_windows)]
-        self.g = [0] * 8
-        self.cwp = 0
+        self.g: list[int] = [0] * 8
+        self.cwp: int = 0
 
     def read_register(self, register: int) -> int:
         if register in range(8):  # globals
