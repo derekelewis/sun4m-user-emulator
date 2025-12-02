@@ -35,3 +35,21 @@ class TestInstruction(unittest.TestCase):
 
     # TODO: need test_save_instruction_rs2_execute
     def test_save_instruction_rs2_execute(self): ...
+
+    # TODO: need test_restore_instruction_simm13_execute
+    def test_restore_instruction_simm13_execute(self):
+        pass
+
+    # TODO: need more than just RESTORE %g0, %g0, %g0
+    def test_restore_instruction_rs2_execute(self):
+        inst: int = 0x81E80000  # RESTORE %g0, %g0, %g0 / RESTORE
+        save_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(save_instruction.rd, 0)  # %g0
+        self.assertEqual(save_instruction.op3, 0b111101)  # op3 for SAVE
+        self.assertEqual(save_instruction.rs1, 0)  # %g0
+        self.assertEqual(save_instruction.i, 0)  # not using immediate
+        self.assertEqual(save_instruction.rs2, 0)
+        cpu_state: CpuState = CpuState()
+        save_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.cwp, 1)
+        self.assertEqual(cpu_state.registers.read_register(0), 0)

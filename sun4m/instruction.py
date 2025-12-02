@@ -56,7 +56,15 @@ class Format3Instruction(Instruction):
                 ) % cpu_state.registers.n_windows
                 cpu_state.registers.write_register(self.rd, sp)
             case 0b111101:  # RESTORE instruction
-                ...
+                sp: int = cpu_state.registers.read_register(self.rs1)
+                if self.i:
+                    sp = sp + self.simm13
+                else:
+                    sp = sp + cpu_state.registers.read_register(self.rs2)
+                cpu_state.registers.cwp = (
+                    cpu_state.registers.cwp + 1
+                ) % cpu_state.registers.n_windows
+                cpu_state.registers.write_register(self.rd, sp)
 
     def __str__(self) -> str:
         inst_string: str = (

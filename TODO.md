@@ -14,10 +14,10 @@ TODOs
         - [x] Correct routing to CALL, Format2, and Format3
     - [x] Operations
         - [x] CALL
-    - [~] Register windows
+    - [x] Register windows
         - [x] Windows implemented
-        - [ ] SAVE Instruction
-        - [ ] RESTORE Instruction
+        - [x] SAVE Instruction
+        - [x] RESTORE Instruction
     - [ ] Cycling
     - [ ] Testing
 4. Syscalls
