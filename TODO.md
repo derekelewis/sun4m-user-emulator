@@ -9,12 +9,15 @@ TODOs
     - [ ] ELF file loading
     - [ ] Testing
 3. CPU operations
-    - [ ] Registers
+    - [x] Registers
     - [~] Decoding
         - [x] Correct routing to CALL, Format2, and Format3
     - [x] Operations
         - [x] CALL
-    - [ ] Register windows
+    - [~] Register windows
+        - [x] Windows implemented
+        - [ ] SAVE Instruction
+        - [ ] RESTORE Instruction
     - [ ] Cycling
     - [ ] Testing
 4. Syscalls
