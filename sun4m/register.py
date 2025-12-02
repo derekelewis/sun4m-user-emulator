@@ -14,7 +14,9 @@ class RegisterFile:
         self.cwp = 0
 
     def read_register(self, register: int) -> int:
-        if register in range(8):
+        if register in range(8):  # globals
+            if register == 0:  # g[0] must always be 0
+                return 0
             return self.g[register]
         elif register in range(8, 16):  # outputs
             return self.windows[self.cwp - 1].i[register - 8]
@@ -26,7 +28,9 @@ class RegisterFile:
             raise ValueError("invalid register")
 
     def write_register(self, register: int, value: int) -> None:
-        if register in range(8):
+        if register in range(8):  # globals
+            if register == 0:  # g[0] must always be 0
+                return
             self.g[register] = value
         elif register in range(8, 16):  # outputs
             self.windows[self.cwp - 1].i[register - 8] = value
