@@ -1,6 +1,6 @@
 import unittest
 from sun4m.cpu import CpuState
-from sun4m.instruction import CallInstruction
+from sun4m.instruction import CallInstruction, Format3Instruction
 
 
 class TestInstruction(unittest.TestCase):
@@ -19,3 +19,19 @@ class TestInstruction(unittest.TestCase):
         self.assertEqual(cpu_state.pc, 0)
         # multiply word offset by 4 for word alignment
         self.assertEqual(cpu_state.npc, 0x20 * 4)
+
+    def test_save_instruction_simm13_execute(self):
+        inst: int = 0x9DE3BFA0  # SAVE %sp, -96, %sp
+        save_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(save_instruction.rd, 14)  # %o6/%sp
+        self.assertEqual(save_instruction.op3, 0b111100)  # op3 for SAVE
+        self.assertEqual(save_instruction.rs1, 14)  # %o6/%sp
+        self.assertEqual(save_instruction.i, 1)
+        self.assertEqual(save_instruction.simm13, -96)
+        cpu_state: CpuState = CpuState()
+        save_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.cwp, 7)
+        self.assertEqual(cpu_state.registers.read_register(14), -96)
+
+    # TODO: need test_save_instruction_rs2_execute
+    def test_save_instruction_rs2_execute(self): ...
