@@ -1,6 +1,6 @@
 import unittest
 from sun4m.cpu import CpuState
-from sun4m.instruction import CallInstruction, Format3Instruction
+from sun4m.instruction import CallInstruction, Format3Instruction, Format2Instruction
 
 
 class TestInstruction(unittest.TestCase):
@@ -53,3 +53,12 @@ class TestInstruction(unittest.TestCase):
         save_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.registers.cwp, 1)
         self.assertEqual(cpu_state.registers.read_register(0), 0)
+
+    def test_sethi_instruction_execute(self):
+        inst: int = 0x03000040  # SETHI %hi(0x10000), %g1
+        sethi_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(sethi_instruction.rd, 1)  # %g1
+        self.assertEqual(sethi_instruction.imm22, 0b1000000)
+        cpu_state: CpuState = CpuState()
+        sethi_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(1), 0x10000)

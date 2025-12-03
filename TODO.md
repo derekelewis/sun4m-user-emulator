@@ -18,7 +18,7 @@ TODOs
         - [x] RESTORE
         - [ ] NOP
         - [ ] MOV
-        - [ ] SETHI
+        - [x] SETHI
         - [ ] OR
         - [ ] CLR
         - [ ] TA
