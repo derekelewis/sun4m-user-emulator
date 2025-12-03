@@ -17,7 +17,6 @@ TODOs
         - [x] SAVE
         - [x] RESTORE
         - [ ] NOP
-        - [ ] SETHI
         - [ ] MOV
         - [ ] SETHI
         - [ ] OR
