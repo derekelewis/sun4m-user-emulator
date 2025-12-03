@@ -16,7 +16,7 @@ TODOs
         - [x] CALL
         - [x] SAVE
         - [x] RESTORE
-        - [ ] NOP
+        - [x] NOP
         - [ ] MOV
         - [x] SETHI
         - [ ] OR
