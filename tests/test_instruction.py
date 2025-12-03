@@ -37,8 +37,7 @@ class TestInstruction(unittest.TestCase):
     def test_save_instruction_rs2_execute(self): ...
 
     # TODO: need test_restore_instruction_simm13_execute
-    def test_restore_instruction_simm13_execute(self):
-        pass
+    def test_restore_instruction_simm13_execute(self): ...
 
     # TODO: need more than just RESTORE %g0, %g0, %g0
     def test_restore_instruction_rs2_execute(self):
