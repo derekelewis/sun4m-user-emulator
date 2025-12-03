@@ -29,6 +29,7 @@ class SystemMemory:
         for segment in self._segments.values():
             if segment.start <= addr < segment.end:
                 return segment
+        return None
 
     def read(self, addr: int, size: int) -> bytes:
         """Read bytes from memory"""
