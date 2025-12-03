@@ -24,8 +24,22 @@ class Format2Instruction(Instruction):
 
     def __init__(self, inst: int):
         super().__init__(inst)
+        self.rd: int = self.inst >> 25 & 0b11111
+        self.op2: int = self.inst >> 22 & 0b111
+        if self.op2 == 0b100:
+            self.imm22: int = self.inst & 0b1111_1111_1111_1111_1111_11
 
-    def execute(self): ...
+    def execute(self, cpu_state: CpuState):
+        match self.op2:
+            case 0b100:  # SETHI instruction
+                value: int = self.imm22 << 10
+                cpu_state.registers.write_register(self.rd, value)
+
+    def __str__(self) -> str:
+        inst_string: str = f"rd: {self.rd}, op2: {self.op2}"
+        if self.op2 == 0b100:
+            inst_string += f", imm22: {self.imm22}"
+        return inst_string
 
 
 class Format3Instruction(Instruction):

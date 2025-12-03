@@ -1,10 +1,7 @@
 from sun4m.cpu import CpuState
-from sun4m.instruction import Format3Instruction
+from sun4m.instruction import Format2Instruction
 
 cpu_state = CpuState()
-x_inst = Format3Instruction(0x9DE3BFA0)
+x_inst = Format2Instruction(0x03000040)
+print(x_inst)
 x_inst.execute(cpu_state)
-
-x_inst = Format3Instruction(0x81E80000)
-x_inst.execute(cpu_state)
-breakpoint()
