@@ -1,4 +1,5 @@
 import unittest
+
 from sun4m.cpu import CpuState
 from sun4m.instruction import CallInstruction, Format3Instruction, Format2Instruction
 
@@ -61,3 +62,18 @@ class TestInstruction(unittest.TestCase):
         cpu_state: CpuState = CpuState()
         sethi_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.registers.read_register(1), 0x10000)
+
+    def test_or_instruction_simm13_execute(self):
+        inst: int = 0x901060F0  # OR %g1, 0xf0, %o0
+        or_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(or_instruction.rd, 8)
+        self.assertEqual(or_instruction.op3, 0b000010)
+        self.assertEqual(or_instruction.rs1, 1)
+        self.assertEqual(or_instruction.i, 1)
+        self.assertEqual(or_instruction.simm13, 0xF0)
+        cpu_state: CpuState = CpuState()
+        or_instruction.execute(cpu_state)
+        self.assertEqual(
+            cpu_state.registers.read_register(8),
+            cpu_state.registers.read_register(1) | 0xF0,
+        )

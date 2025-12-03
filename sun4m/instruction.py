@@ -59,6 +59,18 @@ class Format3Instruction(Instruction):
 
     def execute(self, cpu_state: CpuState):
         match self.op3:
+            case 0b000010:  # OR instruction
+                if self.i:
+                    cpu_state.registers.write_register(
+                        self.rd,
+                        cpu_state.registers.read_register(self.rs1) | self.simm13,
+                    )
+                else:
+                    cpu_state.registers.write_register(
+                        self.rd,
+                        cpu_state.registers.read_register(self.rs1)
+                        | cpu_state.registers.read_register(self.rs2),
+                    )
             case 0b111100:  # SAVE instruction
                 sp: int = cpu_state.registers.read_register(self.rs1)
                 if self.i:

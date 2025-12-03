@@ -17,9 +17,8 @@ TODOs
         - [x] SAVE
         - [x] RESTORE
         - [x] NOP
-        - [ ] MOV
         - [x] SETHI
-        - [ ] OR
+        - [X] OR
         - [ ] CLR
         - [ ] TA
         - [ ] RETL
