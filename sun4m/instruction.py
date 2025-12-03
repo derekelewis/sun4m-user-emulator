@@ -27,7 +27,7 @@ class Format2Instruction(Instruction):
         self.rd: int = self.inst >> 25 & 0b11111
         self.op2: int = self.inst >> 22 & 0b111
         if self.op2 == 0b100:
-            self.imm22: int = self.inst & 0b1111_1111_1111_1111_1111_11
+            self.imm22: int = self.inst & 0b11_1111_1111_1111_1111_1111
 
     def execute(self, cpu_state: CpuState):
         match self.op2:
