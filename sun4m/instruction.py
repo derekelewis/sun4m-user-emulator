@@ -16,7 +16,7 @@ class CallInstruction(Instruction):
             self.disp30 |= 0b11 << 30
 
     def execute(self, cpu_state: CpuState):
-        # disp30 is word offset, so we need to multiple by 4 & wraparound on overflow
+        # disp30 is word offset, so we need to multiply by 4 & wraparound on overflow
         cpu_state.npc = (cpu_state.pc + (self.disp30 << 2)) & 0xFFFFFFFF
 
 
