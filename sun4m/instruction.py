@@ -65,6 +65,8 @@ class Format3Instruction(Instruction):
                     cpu_state.registers.cwp + 1
                 ) % cpu_state.registers.n_windows
                 cpu_state.registers.write_register(self.rd, sp)
+            case _:
+                raise ValueError("unimplemented opcode")
 
     def __str__(self) -> str:
         inst_string: str = (
