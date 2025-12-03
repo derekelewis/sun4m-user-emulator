@@ -15,4 +15,4 @@ def decode(inst: int) -> Instruction:
     elif op in (2, 3):
         return Format3Instruction(inst)
     else:
-        raise ValueError("unknown op")
+        raise ValueError("unknown instruction format")
