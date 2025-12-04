@@ -6,6 +6,9 @@ class Instruction:
     def __init__(self, inst: int):
         self.inst = inst
 
+    def execute(self, cpu_state: CpuState):
+        pass
+
 
 class CallInstruction(Instruction):
 
@@ -39,6 +42,34 @@ class Format2Instruction(Instruction):
         inst_string: str = f"rd: {self.rd}, op2: {self.op2}"
         if self.op2 == 0b100:
             inst_string += f", imm22: {self.imm22}"
+        return inst_string
+
+
+class TrapInstruction(Instruction):
+
+    def __init__(self, inst: int):
+        super().__init__(inst)
+        self.op3: int = self.inst >> 19 & 0b111111
+        self.rs1: int = self.inst >> 14 & 0b11111
+        self.i: int = self.inst >> 13 & 0b1
+        self.cond: int = self.inst >> 25 & 0b1111
+        if self.i:
+            self.imm7: int = self.inst & 0b1111111  # not signed
+        else:
+            self.rs2: int = self.inst & 0b11111
+
+    def execute(self, cpu_state: CpuState): ...
+
+    # TODO: finish implementing TrapInstruction.execute()
+
+    def __str__(self) -> str:
+        inst_string: str = (
+            f"op3: {self.op3}, rs1: {self.rs1}, i: {self.i}, cond: {self.cond}"
+        )
+        if self.i:
+            inst_string += f", simm13: {self.imm7}"
+        else:
+            inst_string += f", rs2: {self.rs2}"
         return inst_string
 
 

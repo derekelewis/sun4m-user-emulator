@@ -3,6 +3,7 @@ from .instruction import (
     CallInstruction,
     Format2Instruction,
     Format3Instruction,
+    TrapInstruction,
 )
 
 
@@ -13,6 +14,10 @@ def decode(inst: int) -> Instruction:
     elif op == 0:
         return Format2Instruction(inst)
     elif op in (2, 3):
-        return Format3Instruction(inst)
+        if ((inst >> 19) & 0b111111) == 0b111010:
+            return TrapInstruction(inst)
+        else:
+            return Format3Instruction(inst)
+
     else:
         raise ValueError("unknown instruction format")

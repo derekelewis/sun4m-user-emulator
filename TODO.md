@@ -12,7 +12,7 @@ TODOs
     - [x] Registers
     - [~] Decoding
         - [x] Correct routing to CALL, Format2, and Format3
-    - [x] Instructions
+    - [~] Instructions
         - [x] CALL
         - [x] SAVE
         - [x] RESTORE
@@ -20,7 +20,7 @@ TODOs
         - [x] SETHI
         - [X] OR
         - [X] CLR
-        - [ ] TA
+        - [~] TA
         - [X] JMPL/RETL
         - [x] ST
         - [x] LD
