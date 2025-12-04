@@ -19,7 +19,7 @@ TODOs
         - [x] NOP
         - [x] SETHI
         - [X] OR
-        - [ ] CLR
+        - [X] CLR
         - [ ] TA
         - [ ] RETL
         - [x] ST
