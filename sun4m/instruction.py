@@ -59,13 +59,12 @@ class TrapInstruction(Instruction):
         else:
             self.rs2: int = self.inst & 0b11111
 
-    def execute(self, cpu_state: CpuState):
+    def execute(self, cpu_state: CpuState) -> None:
+        trap_num: int
         if self.i:
-            trap_num: int = (
-                cpu_state.registers.read_register(self.rs1) + self.imm7
-            ) % 128
+            trap_num = (cpu_state.registers.read_register(self.rs1) + self.imm7) % 128
         else:
-            trap_num: int = (
+            trap_num = (
                 cpu_state.registers.read_register(self.rs1)
                 + cpu_state.registers.read_register(self.rs2)
             ) % 128
@@ -103,11 +102,11 @@ class Format3Instruction(Instruction):
         else:
             self.rs2: int = self.inst & 0b11111
 
-    def execute(self, cpu_state: CpuState):
+    def execute(self, cpu_state: CpuState) -> None:
         match self.op3:
             case 0b000000:  # LD instruction
                 if self.i:
-                    memory_address: int = (
+                    memory_address = (
                         cpu_state.registers.read_register(self.rs1) + self.simm13
                     ) & 0xFFFFFFFF
                     # TODO: raise exception on unaligned memory access
@@ -120,10 +119,10 @@ class Format3Instruction(Instruction):
                     raise ValueError("not implemented")
             case 0b000100:  # ST instruction
                 if self.i:
-                    memory_address: int = (
+                    memory_address = (
                         cpu_state.registers.read_register(self.rs1) + self.simm13
                     ) & 0xFFFFFFFF
-                    store_word: int = cpu_state.registers.read_register(self.rd)
+                    store_word = cpu_state.registers.read_register(self.rd)
                     # TODO: raise exception on unaligned memory access
                     cpu_state.memory.write(
                         memory_address, store_word.to_bytes(4, byteorder="big")
@@ -156,7 +155,7 @@ class Format3Instruction(Instruction):
                         + cpu_state.registers.read_register(self.rs2)
                     ) & 0xFFFFFFFF
             case 0b111100:  # SAVE instruction
-                sp: int = cpu_state.registers.read_register(self.rs1)
+                sp = cpu_state.registers.read_register(self.rs1)
                 if self.i:
                     sp = sp + self.simm13
                 else:
@@ -166,7 +165,7 @@ class Format3Instruction(Instruction):
                 ) % cpu_state.registers.n_windows
                 cpu_state.registers.write_register(self.rd, sp)
             case 0b111101:  # RESTORE instruction
-                sp: int = cpu_state.registers.read_register(self.rs1)
+                sp = cpu_state.registers.read_register(self.rs1)
                 if self.i:
                     sp = sp + self.simm13
                 else:

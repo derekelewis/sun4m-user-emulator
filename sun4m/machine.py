@@ -1,17 +1,15 @@
 from .memory import SystemMemory
+from .elf import load_elf
 
 
 class Machine:
 
     def __init__(self):
         self.memory: SystemMemory = SystemMemory()
+        self.entrypoint: int | None = None
 
-    def load_file(self, file: str) -> None:
+    def load_file(self, file: str) -> int:
         with open(file, "rb") as f:
             elf_bytes = f.read()
-            s1 = self.memory.add_segment(0x10000, 0x1000)
-            offset = 0
-            if s1:
-                s1.buffer[offset : offset + len(elf_bytes)] = elf_bytes
-            else:
-                raise MemoryError("segment allocation failure")
+            self.entrypoint = load_elf(self.memory, elf_bytes)
+            return self.entrypoint
