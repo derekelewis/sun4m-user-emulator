@@ -18,12 +18,11 @@ TODOs
         - [x] RESTORE
         - [x] NOP
         - [x] SETHI
-        - [X] OR
-        - [X] CLR
-        - [~] TA
+        - [x] OR
+        - [x] CLR
+        - [x] TA
             - Created new TrapInstruction class since format of trap instructions is different from Format3Instruction
-            - Need to start execute() implementation
-        - [X] JMPL/RETL
+        - [x] JMPL/RETL
         - [x] ST
         - [x] LD
     - [x] Register windows
@@ -33,5 +32,6 @@ TODOs
     - [ ] Cycling
     - [~] Testing
 4. Syscalls
-    - [ ] Write
-    - [ ] Testing
+    - [x] Write
+    - [x] Exit
+    - [~] Testing

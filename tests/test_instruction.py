@@ -152,4 +152,10 @@ class TestInstruction(unittest.TestCase):
         self.assertEqual(ta_instruction.i, 1)
         self.assertEqual(ta_instruction.cond, 0b1000)
         self.assertEqual(ta_instruction.imm7, 0b10000)
-        # TODO: finish test after execute() is implemented
+        cpu_state: CpuState = CpuState()
+        with self.assertRaises(ValueError) as e:
+            ta_instruction.execute(cpu_state)
+        self.assertEqual(str(e.exception), "syscall not implemented")
+
+    # TODO: need test_ta_instruction_rs2_execute
+    def test_ta_instruction_rs2_execute(self): ...

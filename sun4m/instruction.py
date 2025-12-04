@@ -1,4 +1,5 @@
 from .cpu import CpuState
+from .syscall import Syscall
 
 
 class Instruction:
@@ -58,9 +59,23 @@ class TrapInstruction(Instruction):
         else:
             self.rs2: int = self.inst & 0b11111
 
-    def execute(self, cpu_state: CpuState): ...
+    def execute(self, cpu_state: CpuState):
+        if self.i:
+            trap_num: int = (
+                cpu_state.registers.read_register(self.rs1) + self.imm7
+            ) % 128
+        else:
+            trap_num: int = (
+                cpu_state.registers.read_register(self.rs1)
+                + cpu_state.registers.read_register(self.rs2)
+            ) % 128
 
-    # TODO: finish implementing TrapInstruction.execute()
+        if trap_num == 0x10:  # Software interrupt 0x10 - syscall trap
+            if self.cond == 0b1000:  # TA (Trap Always)
+                syscall_handler: Syscall = Syscall(cpu_state)
+                syscall_handler.handle()
+        else:
+            raise ValueError("unimplemented trap number")
 
     def __str__(self) -> str:
         inst_string: str = (
