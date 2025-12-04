@@ -21,7 +21,7 @@ TODOs
         - [X] OR
         - [X] CLR
         - [ ] TA
-        - [ ] RETL
+        - [X] JMPL/RETL
         - [x] ST
         - [x] LD
     - [x] Register windows

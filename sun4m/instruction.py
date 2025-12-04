@@ -97,6 +97,18 @@ class Format3Instruction(Instruction):
                         cpu_state.registers.read_register(self.rs1)
                         | cpu_state.registers.read_register(self.rs2),
                     )
+            case 0b111000:  # JMPL instruction
+                # TODO: check for alignment
+                cpu_state.registers.write_register(self.rd, cpu_state.pc)
+                if self.i:
+                    cpu_state.npc = (
+                        cpu_state.registers.read_register(self.rs1) + self.simm13
+                    ) & 0xFFFFFFFF
+                else:
+                    cpu_state.npc = (
+                        cpu_state.registers.read_register(self.rs1)
+                        + cpu_state.registers.read_register(self.rs2)
+                    ) & 0xFFFFFFFF
             case 0b111100:  # SAVE instruction
                 sp: int = cpu_state.registers.read_register(self.rs1)
                 if self.i:

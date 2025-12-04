@@ -114,3 +114,18 @@ class TestInstruction(unittest.TestCase):
         )
         st_instruction.execute(cpu_state)
         self.assertEqual(test_bytes[:4], cpu_state.memory.read(0x44, 4))
+
+    def test_jmpl_instruction_simm13_execute(self):
+        inst: int = 0x81C3E008  # JMPL [%o7 + 8], %g0
+        jmpl_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(jmpl_instruction.rd, 0)
+        self.assertEqual(jmpl_instruction.op3, 0b111000)
+        self.assertEqual(jmpl_instruction.rs1, 15)
+        self.assertEqual(jmpl_instruction.i, 1)
+        self.assertEqual(jmpl_instruction.simm13, 0x8)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x100
+        cpu_state.npc = 0x104
+        cpu_state.registers.write_register(15, 0x200)
+        jmpl_instruction.execute(cpu_state)
+        breakpoint()
