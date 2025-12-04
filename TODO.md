@@ -6,8 +6,8 @@ TODOs
     - [x] Map address to segment
     - [x] Testing
 2. ELF
-    - [ ] ELF file loading
-    - [ ] Testing
+    - [x] ELF file loading
+    - [x] Testing
 3. CPU operations
     - [x] Registers
     - [~] Decoding
