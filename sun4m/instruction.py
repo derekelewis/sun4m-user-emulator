@@ -67,7 +67,7 @@ class TrapInstruction(Instruction):
             f"op3: {self.op3}, rs1: {self.rs1}, i: {self.i}, cond: {self.cond}"
         )
         if self.i:
-            inst_string += f", simm13: {self.imm7}"
+            inst_string += f", imm7: {self.imm7}"
         else:
             inst_string += f", rs2: {self.rs2}"
         return inst_string
