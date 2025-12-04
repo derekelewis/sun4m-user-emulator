@@ -21,6 +21,7 @@ TODOs
         - [X] OR
         - [X] CLR
         - [~] TA
+            - Created new TrapInstruction class since format of trap instructions is different from Format3Instruction
             - Need to start execute() implementation
         - [X] JMPL/RETL
         - [x] ST
@@ -30,7 +31,7 @@ TODOs
         - [x] SAVE Instruction
         - [x] RESTORE Instruction
     - [ ] Cycling
-    - [ ] Testing
+    - [~] Testing
 4. Syscalls
     - [ ] Write
     - [ ] Testing
