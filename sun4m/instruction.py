@@ -83,6 +83,7 @@ class Format3Instruction(Instruction):
                         memory_address, store_word.to_bytes(4, byteorder="big")
                     )
                 else:
+                    # supervisor only
                     raise ValueError("not implemented")
             case 0b000010:  # OR instruction
                 if self.i:
