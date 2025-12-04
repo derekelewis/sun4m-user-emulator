@@ -23,7 +23,7 @@ TODOs
         - [ ] TA
         - [ ] RETL
         - [ ] ST
-        - [ ] LD
+        - [x] LD
     - [x] Register windows
         - [x] Windows implemented
         - [x] SAVE Instruction

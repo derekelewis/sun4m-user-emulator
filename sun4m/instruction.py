@@ -59,6 +59,19 @@ class Format3Instruction(Instruction):
 
     def execute(self, cpu_state: CpuState):
         match self.op3:
+            case 0b000000:  # LD instruction
+                if self.i:
+                    memory_address: int = (
+                        cpu_state.registers.read_register(self.rs1) + self.simm13
+                    ) & 0xFFFFFFFF
+                    # TODO: raise exception unaligned memory access
+                    load_word = cpu_state.memory.read(memory_address, 4)
+                    cpu_state.registers.write_register(
+                        self.rd, int.from_bytes(load_word, "big")
+                    )
+                else:
+                    # supervisor only
+                    raise ValueError("not implemented")
             case 0b000010:  # OR instruction
                 if self.i:
                     cpu_state.registers.write_register(

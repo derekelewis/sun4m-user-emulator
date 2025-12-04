@@ -1,4 +1,5 @@
 from sun4m.register import RegisterFile
+from sun4m.memory import SystemMemory
 
 
 class CpuState:
@@ -8,3 +9,4 @@ class CpuState:
         self.npc: int = 0
         self.psr: int = 0
         self.registers: RegisterFile = RegisterFile()
+        self.memory: SystemMemory = SystemMemory()

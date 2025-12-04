@@ -77,3 +77,23 @@ class TestInstruction(unittest.TestCase):
             cpu_state.registers.read_register(8),
             cpu_state.registers.read_register(1) | 0xF0,
         )
+
+    # TODO: need test_or_instruction_rs2_execute
+    def test_or_instruction_rs2_execute(self): ...
+
+    def test_ld_instruction_simm13_execute(self):
+        inst: int = 0xC407A044  # ld [ %fp + 0x44 ], %g2
+        ld_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ld_instruction.rd, 2)
+        self.assertEqual(ld_instruction.op3, 0)
+        self.assertEqual(ld_instruction.rs1, 30)
+        self.assertEqual(ld_instruction.i, 1)
+        self.assertEqual(ld_instruction.simm13, 0x44)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        test_bytes: bytes = "hello, world".encode()
+        cpu_state.memory.write(0x44, test_bytes)
+        ld_instruction.execute(cpu_state)
+        self.assertEqual(
+            int.from_bytes(test_bytes[:4], "big"), cpu_state.registers.read_register(2)
+        )
