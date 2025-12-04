@@ -64,13 +64,25 @@ class Format3Instruction(Instruction):
                     memory_address: int = (
                         cpu_state.registers.read_register(self.rs1) + self.simm13
                     ) & 0xFFFFFFFF
-                    # TODO: raise exception unaligned memory access
+                    # TODO: raise exception on unaligned memory access
                     load_word = cpu_state.memory.read(memory_address, 4)
                     cpu_state.registers.write_register(
                         self.rd, int.from_bytes(load_word, "big")
                     )
                 else:
                     # supervisor only
+                    raise ValueError("not implemented")
+            case 0b000100:  # ST instruction
+                if self.i:
+                    memory_address: int = (
+                        cpu_state.registers.read_register(self.rs1) + self.simm13
+                    ) & 0xFFFFFFFF
+                    store_word: int = cpu_state.registers.read_register(self.rd)
+                    # TODO: raise exception on unaligned memory access
+                    cpu_state.memory.write(
+                        memory_address, store_word.to_bytes(4, byteorder="big")
+                    )
+                else:
                     raise ValueError("not implemented")
             case 0b000010:  # OR instruction
                 if self.i:

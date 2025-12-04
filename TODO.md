@@ -22,7 +22,7 @@ TODOs
         - [ ] CLR
         - [ ] TA
         - [ ] RETL
-        - [ ] ST
+        - [x] ST
         - [x] LD
     - [x] Register windows
         - [x] Windows implemented
