@@ -21,6 +21,7 @@ TODOs
         - [X] OR
         - [X] CLR
         - [~] TA
+            - Need to start execute() implementation
         - [X] JMPL/RETL
         - [x] ST
         - [x] LD
