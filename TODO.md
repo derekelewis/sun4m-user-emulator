@@ -25,11 +25,20 @@ TODOs
         - [x] JMPL/RETL
         - [x] ST
         - [x] LD
+        - [ ] Bicc (b/ba, bne, bl, be, ble)
+        - [ ] ADD (inc)
+        - [ ] SUB
+        - [ ] SUBCC (cmp)
+        - [ ] SRA
+        - [ ] SMUL
+        - [ ] SDIV
+        - [ ] WRY
     - [x] Register windows
         - [x] Windows implemented
         - [x] SAVE Instruction
         - [x] RESTORE Instruction
     - [x] Cycling
+    - [ ] Integer Condition Codes (ICC)
     - [~] Testing
 4. Syscalls
     - [x] Write
