@@ -7,8 +7,6 @@ directly into ``SystemMemory`` using their virtual addresses, and BSS space
 is zero-initialised by virtue of the freshly allocated buffers.
 """
 
-from __future__ import annotations
-
 import struct
 from typing import Iterable, Tuple
 
