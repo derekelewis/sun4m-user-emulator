@@ -23,7 +23,7 @@ class TestCpuStepping(unittest.TestCase):
         cpu.memory.write(0x100, nop.to_bytes(4, "big"))
 
         cpu.pc = 0x100
-        cpu.npc = 0  # exercise default nPC handling
+        cpu.npc = None # exercise default nPC handling
 
         cpu.step()
 
