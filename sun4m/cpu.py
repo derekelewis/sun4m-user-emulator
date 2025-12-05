@@ -8,7 +8,7 @@ class CpuState:
     def __init__(self, memory: SystemMemory | None = None, trace: bool = False):
         self.trace: bool = trace
         self.pc: int = 0
-        self.npc: int = 0
+        self.npc: int | None = None
         self.psr: int = 0
         self.registers: RegisterFile = RegisterFile()
         # Memory is shared with Machine; fall back to a private instance for
@@ -35,7 +35,7 @@ class CpuState:
         """
 
         # Treat an unset nPC as sequential execution from the current PC.
-        current_npc = self.npc if self.npc else (self.pc + 4) & 0xFFFFFFFF
+        current_npc = self.npc if self.npc is not None else (self.pc + 4) & 0xFFFFFFFF
 
         # Default fallthrough for the instruction after *current_npc*.
         default_next_npc = (current_npc + 4) & 0xFFFFFFFF
