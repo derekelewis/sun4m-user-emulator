@@ -17,7 +17,7 @@ int calculate_primes(int n) {
     return n_primes;
 }
 
-int main() {
+int kernel_main() {
     int n = calculate_primes(10000);
     return 0;
 }
