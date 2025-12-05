@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `sun4m/`: emulator core. `cpu.py` holds CPU state and register windows; `decoder.py` routes opcodes to instruction subclasses in `instruction.py`; `memory.py` provides `SystemMemory`; `machine.py` handles binary loading; `syscall.py` contains trap handlers.
+- `sun4m/`: emulator core. `cpu.py` holds CPU state/register windows and stepping helpers; `decoder.py` routes opcodes to instruction subclasses in `instruction.py`; `memory.py` provides `SystemMemory`; `machine.py` handles binary loading; `syscall.py` contains trap handlers.
 - `bin/`: sample SPARC program (`hello_world`, `start.S`, `hello_world.c`) and `Makefile` to rebuild it.
 - `tests/`: unit suites per component (`test_memory.py`, `test_register.py`, `test_decoder.py`, `test_instruction.py`).
 - `debug.py`: small harness showing decode/execute against a preloaded memory segment.
@@ -31,7 +31,8 @@
 - Keep changes focused; split emulator core updates from sample binary or docs edits.
 
 ## Architecture Overview
-- `Machine` owns `SystemMemory` segments and feeds instructions decoded via `decoder.decode` into classes from `instruction.py`.
+- `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
 - `register.py` models register windows; `syscall.py` implements trap-based syscalls (write, exit).
 - New instructions usually require decoder wiring plus an `execute` method that reads/writes through `CpuState` and `SystemMemory`.
+- SPARC CALL semantics: store the call-site PC (not PC+4) into `%o7`; `retl` adds 8 to resume after the delay slot.
 - `elf.py` provides a minimal loader for 32-bit big-endian SPARC ELFs; it maps PT_LOAD segments into `SystemMemory` at their `p_vaddr`, copies file bytes up to `p_filesz`, leaves the remainder zeroed, and returns the entry point. It ignores `p_flags/p_align/p_paddr` because protection and alignment aren’t modelled yet.
