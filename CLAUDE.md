@@ -14,6 +14,7 @@
 - On macOS, use Homebrew binutils (`$(brew prefix binutils)/bin/objdump`, `readelf`, `addr2line`, etc.) so the GNU versions are picked up instead of the system BSD variants.
 
 ## Coding Style & Naming Conventions
+- Use `black` for code formatting.
 - Follow PEP 8 with 4-space indents and keep type hints (existing modules annotate extensively).
 - Classes use CamelCase (`Machine`, `SystemMemory`); constants uppercase; register/opcode fields follow SPARC naming (`rs1`, `rs2`, `rd`).
 - Keep instruction implementations small and push state changes through existing memory/register helpers.
