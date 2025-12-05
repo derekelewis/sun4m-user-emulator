@@ -29,7 +29,7 @@ TODOs
         - [x] Windows implemented
         - [x] SAVE Instruction
         - [x] RESTORE Instruction
-    - [ ] Cycling
+    - [x] Cycling
     - [~] Testing
 4. Syscalls
     - [x] Write

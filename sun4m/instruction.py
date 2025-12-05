@@ -22,6 +22,9 @@ class CallInstruction(Instruction):
     def execute(self, cpu_state: CpuState):
         # disp30 is word offset, so we need to multiply by 4 & wraparound on overflow
         cpu_state.npc = (cpu_state.pc + (self.disp30 << 2)) & 0xFFFFFFFF
+        # Write pc to %o7 to ensure we have a return address. Otherwise, the return will be 0.
+        # We use pc since the RETL = JMPL %o7 + 8, %g0, which jump past the delay slot on return.
+        cpu_state.registers.write_register(15, cpu_state.pc)
 
 
 class Format2Instruction(Instruction):

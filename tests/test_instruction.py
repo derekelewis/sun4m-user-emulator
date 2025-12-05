@@ -21,10 +21,12 @@ class TestInstruction(unittest.TestCase):
         call_instruction: CallInstruction = CallInstruction(inst)
         self.assertEqual(call_instruction.disp30, 0x20)
         cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
         call_instruction.execute(cpu_state)
-        self.assertEqual(cpu_state.pc, 0)
+        self.assertEqual(cpu_state.pc, 0x1000)
         # multiply word offset by 4 for word alignment
-        self.assertEqual(cpu_state.npc, 0x20 * 4)
+        self.assertEqual(cpu_state.npc, 0x1000 + (0x20 * 4))
+        self.assertEqual(cpu_state.registers.read_register(15), cpu_state.pc)
 
     def test_save_instruction_simm13_execute(self):
         inst: int = 0x9DE3BFA0  # SAVE %sp, -96, %sp
