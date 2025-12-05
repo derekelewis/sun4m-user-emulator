@@ -36,7 +36,7 @@ class SystemMemory:
 
         segment = self.segment_for_addr(addr)
         # guard against reads that span segments
-        if segment and segment.start <= (addr + size) < segment.end:
+        if segment and segment.start <= (addr + size) <= segment.end:
             offset = addr - segment.start
             return segment.buffer[offset : offset + size]
         else:
@@ -47,7 +47,7 @@ class SystemMemory:
 
         segment = self.segment_for_addr(addr)
         # guard against writes that span segments
-        if segment and segment.start <= (addr + len(input)) < segment.end:
+        if segment and segment.start <= (addr + len(input)) <= segment.end:
             offset = addr - segment.start
             segment.buffer[offset : offset + len(input)] = input
         else:

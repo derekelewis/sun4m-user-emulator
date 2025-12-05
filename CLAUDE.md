@@ -18,9 +18,10 @@
 - Classes use CamelCase (`Machine`, `SystemMemory`); constants uppercase; register/opcode fields follow SPARC naming (`rs1`, `rs2`, `rd`).
 - Keep instruction implementations small and push state changes through existing memory/register helpers.
 - Target Python 3.14; prefer modern typing syntax (PEP 604/PEP 695, `list[int]`, `|` unions, `typing.Self`, `type`/`TypedDict`/`Protocol`) and avoid deprecated aliases like `typing.Optional[T]` when `T | None` is available.
-- Run `mypy sun4m tests` before PRs; keep the tree type-clean.
+- Run `mypy sun4m tests` before PRs; keep the tree type-clean. `mypy` is installed as a system binary.
 
 ## Testing Guidelines
+- Use `unittest` as the testing framework.
 - Add `unittest.TestCase` suites under `tests/test_*.py` that mirror the component name.
 - Prefer behavior-driven test names (`test_memory_write_cross_segment`) and cover error paths (invalid addresses, window underflow).
 - When adding instructions, include both decode and execute assertions using `Machine()` and the relevant `Instruction` subclass.
@@ -33,6 +34,7 @@
 ## Architecture Overview
 - `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
 - `register.py` models register windows; `syscall.py` implements trap-based syscalls (write, exit).
+- Register window overlap: Each `Window` stores only `i` (ins) and `l` (locals)—there is no separate outs array. The SPARC overlap (caller's outs = callee's ins) is achieved by resolving outs at CWP via `windows[cwp - 1].i`. When SAVE decrements CWP, the same physical storage that was "outs" becomes "ins" in the new window. This is correct per SPARC V8 Figure 4-1.
 - New instructions usually require decoder wiring plus an `execute` method that reads/writes through `CpuState` and `SystemMemory`.
 - SPARC CALL semantics: store the call-site PC (not PC+4) into `%o7`; `retl` adds 8 to resume after the delay slot.
 - `elf.py` provides a minimal loader for 32-bit big-endian SPARC ELFs; it maps PT_LOAD segments into `SystemMemory` at their `p_vaddr`, copies file bytes up to `p_filesz`, leaves the remainder zeroed, and returns the entry point. It ignores `p_flags/p_align/p_paddr` because protection and alignment aren’t modelled yet.
