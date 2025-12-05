@@ -56,6 +56,13 @@ class TestMemory(unittest.TestCase):
         with self.assertRaises(MemoryError) as e:
             machine.memory.write(0x100, self.test_bytes)
 
+    def test_memory_write_and_read_last_bytes(self):
+        machine: Machine = Machine()
+        machine.memory.add_segment(0x100, 0x100)
+        machine.memory.write(0x200 - len(self.test_bytes), self.test_bytes)
+        bytes_read = machine.memory.read(0x200 - len(self.test_bytes), len(self.test_bytes))
+        self.assertEqual(self.test_bytes, bytes_read)
+
 
 if __name__ == "__main__":
     unittest.main()
