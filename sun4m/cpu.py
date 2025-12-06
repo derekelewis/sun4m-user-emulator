@@ -64,15 +64,6 @@ class CpuState:
         # standalone CpuState usage in tests.
         self.memory: SystemMemory = memory if memory else SystemMemory()
 
-    def _fetch_word(self, addr: int) -> int:
-        """Fetch a 32-bit instruction from ``addr`` (big-endian)."""
-
-        inst_bytes = self.memory.read(addr, 4)
-        inst = int.from_bytes(inst_bytes, "big")
-        if self.trace:
-            print(f"_fetch_word: inst: {hex(inst)}")
-        return inst
-
     def step(self):
         """
         Execute a single instruction and advance the PC/nPC pipeline.
@@ -90,7 +81,10 @@ class CpuState:
         default_next_npc = (current_npc + 4) & 0xFFFFFFFF
         self.npc = default_next_npc
 
-        inst_word = self._fetch_word(self.pc)
+        inst_bytes = self.memory.read(self.pc, 4)
+        inst_word = int.from_bytes(inst_bytes, "big")
+        if self.trace:
+            print(f"fetch_word: inst: {hex(inst_word)}")
 
         instruction = decode(inst_word)
         instruction.execute(self)
