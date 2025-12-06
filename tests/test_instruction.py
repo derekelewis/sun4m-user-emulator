@@ -161,3 +161,336 @@ class TestInstruction(unittest.TestCase):
 
     # TODO: need test_ta_instruction_rs2_execute
     def test_ta_instruction_rs2_execute(self): ...
+
+    # --- ADD instruction tests ---
+
+    def test_add_instruction_simm13_execute(self):
+        # ADD %g1, 10, %g2 -> op=2, rd=2, op3=0, rs1=1, i=1, simm13=10
+        # Encoding: 10 00010 000000 00001 1 0000000001010
+        inst: int = 0x8400600A  # ADD %g1, 10, %g2
+        add_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(add_instruction.op, 2)
+        self.assertEqual(add_instruction.rd, 2)
+        self.assertEqual(add_instruction.op3, 0b000000)
+        self.assertEqual(add_instruction.rs1, 1)
+        self.assertEqual(add_instruction.i, 1)
+        self.assertEqual(add_instruction.simm13, 10)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        add_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 110)
+
+    def test_add_instruction_rs2_execute(self):
+        # ADD %g1, %g3, %g2 -> op=2, rd=2, op3=0, rs1=1, i=0, rs2=3
+        inst: int = 0x84004003  # ADD %g1, %g3, %g2
+        add_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(add_instruction.op, 2)
+        self.assertEqual(add_instruction.i, 0)
+        self.assertEqual(add_instruction.rs2, 3)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(3, 50)
+        add_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 150)
+
+    def test_add_instruction_overflow(self):
+        # Test wrap-around at 32-bit boundary
+        inst: int = 0x8400600A  # ADD %g1, 10, %g2
+        add_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFFFFFFF8)  # -8 as unsigned
+        add_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 2)  # wraparound
+
+    # --- SUB instruction tests ---
+
+    def test_sub_instruction_simm13_execute(self):
+        # SUB %g1, 10, %g2 -> op=2, rd=2, op3=4, rs1=1, i=1, simm13=10
+        inst: int = 0x8420600A  # SUB %g1, 10, %g2
+        sub_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(sub_instruction.op3, 0b000100)
+        self.assertEqual(sub_instruction.simm13, 10)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        sub_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 90)
+
+    def test_sub_instruction_rs2_execute(self):
+        # SUB %g1, %g3, %g2 -> op=2, rd=2, op3=4, rs1=1, i=0, rs2=3
+        inst: int = 0x84204003  # SUB %g1, %g3, %g2
+        sub_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(3, 30)
+        sub_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 70)
+
+    # --- SUBCC instruction tests ---
+
+    def test_subcc_instruction_sets_zero_flag(self):
+        # SUBCC %g1, %g1, %g0 (effectively cmp %g1, %g1)
+        inst: int = 0x80A04001  # SUBCC %g1, %g1, %g0
+        subcc_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(subcc_instruction.op3, 0b010100)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 42)
+        subcc_instruction.execute(cpu_state)
+        self.assertTrue(cpu_state.icc.z)
+        self.assertFalse(cpu_state.icc.n)
+        self.assertFalse(cpu_state.icc.v)
+
+    def test_subcc_instruction_sets_negative_flag(self):
+        # SUBCC %g1, 100, %g2 where g1 < 100
+        inst: int = 0x84A06064  # SUBCC %g1, 100, %g2
+        subcc_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 50)
+        subcc_instruction.execute(cpu_state)
+        self.assertTrue(cpu_state.icc.n)  # result is negative
+        self.assertFalse(cpu_state.icc.z)
+
+    def test_subcc_cmp_equal(self):
+        # CMP %g1, %g2 is SUBCC %g1, %g2, %g0
+        inst: int = 0x80A04002  # SUBCC %g1, %g2, %g0
+        subcc_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 100)
+        subcc_instruction.execute(cpu_state)
+        self.assertTrue(cpu_state.icc.z)
+
+    # --- SRA instruction tests ---
+
+    def test_sra_instruction_positive(self):
+        # SRA %g1, 4, %g2 - shift right arithmetic by 4
+        # op=2, rd=2, op3=0b100111, rs1=1, i=1, simm13=4
+        inst: int = 0x85386004  # SRA %g1, 4, %g2
+        sra_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(sra_instruction.op3, 0b100111)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x100)  # 256
+        sra_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x10)  # 16
+
+    def test_sra_instruction_negative(self):
+        # SRA with negative value preserves sign
+        # op=2, rd=2, op3=0b100111, rs1=1, i=1, simm13=4
+        inst: int = 0x85386004  # SRA %g1, 4, %g2
+        sra_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x80000000)  # -2147483648
+        sra_instruction.execute(cpu_state)
+        # After shift right by 4, should still have sign bits
+        self.assertEqual(cpu_state.registers.read_register(2), 0xF8000000)
+
+    # --- SMUL instruction tests ---
+
+    def test_smul_instruction_positive(self):
+        # SMUL %g1, %g2, %g3 - signed multiply
+        # op=2, rd=3, op3=0b001011, rs1=1, i=0, rs2=2
+        inst: int = 0x86584002  # SMUL %g1, %g2, %g3
+        smul_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(smul_instruction.op3, 0b001011)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 200)
+        smul_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 20000)
+        self.assertEqual(cpu_state.y, 0)
+
+    def test_smul_instruction_large_result(self):
+        # SMUL with large result that overflows into Y
+        # op=2, rd=3, op3=0b001011, rs1=1, i=0, rs2=2
+        inst: int = 0x86584002  # SMUL %g1, %g2, %g3
+        smul_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x10000)  # 65536
+        cpu_state.registers.write_register(2, 0x10000)  # 65536
+        smul_instruction.execute(cpu_state)
+        # 65536 * 65536 = 4294967296 = 0x100000000
+        self.assertEqual(cpu_state.registers.read_register(3), 0)
+        self.assertEqual(cpu_state.y, 1)
+
+    def test_smul_instruction_negative(self):
+        # SMUL with negative operand
+        # op=2, rd=3, op3=0b001011, rs1=1, i=0, rs2=2
+        inst: int = 0x86584002  # SMUL %g1, %g2, %g3
+        smul_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFFFFFFFF)  # -1
+        cpu_state.registers.write_register(2, 10)
+        smul_instruction.execute(cpu_state)
+        # -1 * 10 = -10 = 0xFFFFFFF6 as 32-bit
+        self.assertEqual(cpu_state.registers.read_register(3), 0xFFFFFFF6)
+        self.assertEqual(cpu_state.y, 0xFFFFFFFF)  # sign extended
+
+    # --- SDIV instruction tests ---
+
+    def test_sdiv_instruction_positive(self):
+        # SDIV %g1, %g2, %g3 - signed divide (dividend is Y:rs1)
+        # op=2, rd=3, op3=0b001111, rs1=1, i=0, rs2=2
+        inst: int = 0x86784002  # SDIV %g1, %g2, %g3
+        sdiv_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(sdiv_instruction.op3, 0b001111)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 0
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 10)
+        sdiv_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 10)
+
+    def test_sdiv_instruction_with_y(self):
+        # SDIV where Y register contributes to dividend
+        # op=2, rd=3, op3=0b001111, rs1=1, i=0, rs2=2
+        inst: int = 0x86784002  # SDIV %g1, %g2, %g3
+        sdiv_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 1  # Y:rs1 = 0x100000000
+        cpu_state.registers.write_register(1, 0)
+        cpu_state.registers.write_register(2, 2)
+        sdiv_instruction.execute(cpu_state)
+        # 0x100000000 / 2 = 0x80000000 but gets clamped to 0x7FFFFFFF (max signed 32-bit)
+        self.assertEqual(cpu_state.registers.read_register(3), 0x7FFFFFFF)
+
+    def test_sdiv_division_by_zero(self):
+        # op=2, rd=3, op3=0b001111, rs1=1, i=0, rs2=2
+        inst: int = 0x86784002  # SDIV %g1, %g2, %g3
+        sdiv_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 0
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 0)
+        with self.assertRaises(ValueError) as e:
+            sdiv_instruction.execute(cpu_state)
+        self.assertEqual(str(e.exception), "division by zero")
+
+    # --- WRY instruction tests ---
+
+    def test_wry_instruction_simm13(self):
+        # WRY %g1, 0, %y -> writes g1 ^ 0 to Y
+        inst: int = 0x81800000  # WRY %g0, %g0
+        wry_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(wry_instruction.op3, 0b110000)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x12345678)
+        # WRY %g1, 0, %y
+        inst = 0x81806000  # WRY %g1, 0
+        wry_instruction = Format3Instruction(inst)
+        wry_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.y, 0x12345678)
+
+    def test_wry_instruction_xor(self):
+        # WRY does XOR: Y = rs1 ^ operand2
+        inst: int = 0x818060FF  # WRY %g1, 0xFF
+        wry_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFF)
+        wry_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.y, 0)  # 0xFF ^ 0xFF = 0
+
+    # --- Bicc (branch) instruction tests ---
+
+    def test_ba_instruction(self):
+        # BA (branch always) with disp22 = 4 (16 bytes forward)
+        # Format: 00 1 1000 010 disp22
+        inst: int = 0x10800004  # BA +16
+        ba_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(ba_instruction.op2, 0b010)
+        self.assertEqual(ba_instruction.cond, 0b1000)
+        self.assertEqual(ba_instruction.disp22, 4)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        ba_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)  # 0x1000 + (4 * 4)
+
+    def test_bne_instruction_taken(self):
+        # BNE when Z=0 (not equal)
+        inst: int = 0x12800004  # BNE +16
+        bne_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(bne_instruction.cond, 0b1001)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.icc.z = False
+        bne_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)
+
+    def test_bne_instruction_not_taken(self):
+        # BNE when Z=1 (equal)
+        inst: int = 0x12800004  # BNE +16
+        bne_instruction: Format2Instruction = Format2Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.npc = 0x1004
+        cpu_state.icc.z = True
+        bne_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1004)  # unchanged
+
+    def test_be_instruction_taken(self):
+        # BE when Z=1 (equal)
+        inst: int = 0x02800004  # BE +16
+        be_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(be_instruction.cond, 0b0001)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.icc.z = True
+        be_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)
+
+    def test_bl_instruction_taken(self):
+        # BL (less than) when N xor V = 1
+        inst: int = 0x06800004  # BL +16
+        bl_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(bl_instruction.cond, 0b0011)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.icc.n = True
+        cpu_state.icc.v = False
+        bl_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)
+
+    def test_ble_instruction_taken(self):
+        # BLE (less or equal) when Z=1 or (N xor V)=1
+        inst: int = 0x04800004  # BLE +16
+        ble_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(ble_instruction.cond, 0b0010)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.icc.z = True
+        ble_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)
+
+    def test_branch_backward(self):
+        # BA with negative displacement (backward branch)
+        inst: int = 0x10BFFFFC  # BA -16 (disp22 = -4)
+        ba_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(ba_instruction.disp22, -4)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        ba_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0xFF0)  # 0x1000 + (-4 * 4)
+
+    # --- ICC update tests ---
+
+    def test_icc_update_zero(self):
+        from sun4m.cpu import ICC
+        icc = ICC()
+        icc.update(0, 5, 5, is_sub=True)
+        self.assertTrue(icc.z)
+        self.assertFalse(icc.n)
+
+    def test_icc_update_negative(self):
+        from sun4m.cpu import ICC
+        icc = ICC()
+        icc.update(0x80000000, 0, 0x80000000, is_sub=True)
+        self.assertTrue(icc.n)
+        self.assertFalse(icc.z)
+
+    def test_icc_carry_subtraction(self):
+        from sun4m.cpu import ICC
+        icc = ICC()
+        # 10 - 5 = 5, no borrow so C=1 (in SPARC, C=1 means no borrow)
+        icc.update(5, 10, 5, is_sub=True)
+        self.assertTrue(icc.c)
+        # 5 - 10 = -5 (unsigned wraparound), borrow so C=0
+        icc.update(0xFFFFFFFB, 5, 10, is_sub=True)
+        self.assertFalse(icc.c)

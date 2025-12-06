@@ -1,3 +1,6 @@
+from functools import lru_cache
+
+
 class MemorySegment:
     """Represents a virtual address space segment of contiguous memory"""
 
@@ -19,10 +22,13 @@ class SystemMemory:
         if not self.segment_for_addr(start):
             segment: MemorySegment = MemorySegment(start, size)
             self._segments[start] = segment
+            # Invalidate cache since address mappings changed
+            self.segment_for_addr.cache_clear()
             return segment
         else:
             return None
 
+    @lru_cache
     def segment_for_addr(self, addr: int) -> MemorySegment | None:
         """Retrieve segment given an address"""
         # TODO: replace linear search with something better

@@ -20,5 +20,7 @@ class Machine:
             self.cpu.pc = self.entrypoint
             self.cpu.npc = (self.entrypoint + 4) & 0xFFFFFFFF
             # Initialize 64KB memory segment for stack
-            self.cpu.memory.add_segment(0xFFFFFFFF - 65536, 65536)
+            self.cpu.memory.add_segment(0xFFFFFFF0 - 65536, 65536)
+            # Initialize %sp to 0xFFFFFFF0
+            self.cpu.registers.write_register(14, 0xFFFFFFF0)
             return self.entrypoint

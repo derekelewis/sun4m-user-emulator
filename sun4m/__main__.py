@@ -8,7 +8,9 @@ parser.add_argument(
     default="./bin/hello_world",
     help="ELF binary to execute (default: ./bin/hello_world)",
 )
-parser.add_argument("--steps", default=10000, help="number of cycles/steps to execute")
+parser.add_argument(
+    "--steps", type=int, default=10000, help="number of cycles/steps to execute"
+)
 parser.add_argument("--trace", action="store_true", help="enable tracing")
 args = parser.parse_args()
 

@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 import sys
-from sun4m.cpu import CpuState
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sun4m.cpu import CpuState
 
 
 class Syscall:
 
     def __init__(self, cpu_state: CpuState):
-        self.cpu_state: CpuState = cpu_state
+        self.cpu_state = cpu_state
 
     def handle(self):
         # Get syscall number from %g1
