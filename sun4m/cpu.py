@@ -2,6 +2,52 @@ from sun4m.register import RegisterFile
 from sun4m.memory import SystemMemory
 
 
+class ICC:
+    """Integer Condition Codes (N, Z, V, C)."""
+
+    def __init__(self):
+        self.n: bool = False  # Negative
+        self.z: bool = False  # Zero
+        self.v: bool = False  # Overflow
+        self.c: bool = False  # Carry
+
+    def update(self, result: int, op1: int, op2: int, is_sub: bool = False) -> None:
+        """Update ICC based on an ALU operation result.
+
+        Args:
+            result: The 32-bit result of the operation (already masked).
+            op1: First operand (32-bit).
+            op2: Second operand (32-bit).
+            is_sub: True for subtraction, False for addition.
+        """
+        # N: set if result is negative (bit 31 set)
+        self.n = bool(result & 0x80000000)
+
+        # Z: set if result is zero
+        self.z = result == 0
+
+        if is_sub:
+            # For subtraction A - B:
+            # C: set if there was NO borrow (i.e., A >= B as unsigned)
+            self.c = (op1 & 0xFFFFFFFF) >= (op2 & 0xFFFFFFFF)
+            # V: overflow if signs of operands differ and sign of result
+            # differs from sign of first operand
+            op1_sign = bool(op1 & 0x80000000)
+            op2_sign = bool(op2 & 0x80000000)
+            result_sign = bool(result & 0x80000000)
+            self.v = (op1_sign != op2_sign) and (result_sign != op1_sign)
+        else:
+            # For addition A + B:
+            # C: set if carry out of bit 31
+            full_result = (op1 & 0xFFFFFFFF) + (op2 & 0xFFFFFFFF)
+            self.c = full_result > 0xFFFFFFFF
+            # V: overflow if both operands have same sign but result differs
+            op1_sign = bool(op1 & 0x80000000)
+            op2_sign = bool(op2 & 0x80000000)
+            result_sign = bool(result & 0x80000000)
+            self.v = (op1_sign == op2_sign) and (result_sign != op1_sign)
+
+
 class CpuState:
     """Represents the architectural state of the emulated CPU."""
 
@@ -10,6 +56,8 @@ class CpuState:
         self.pc: int = 0
         self.npc: int | None = None
         self.psr: int = 0
+        self.y: int = 0  # Y register for multiply/divide
+        self.icc: ICC = ICC()  # Integer Condition Codes
         self.registers: RegisterFile = RegisterFile()
         # Memory is shared with Machine; fall back to a private instance for
         # standalone CpuState usage in tests.

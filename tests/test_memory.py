@@ -60,7 +60,9 @@ class TestMemory(unittest.TestCase):
         machine: Machine = Machine()
         machine.memory.add_segment(0x100, 0x100)
         machine.memory.write(0x200 - len(self.test_bytes), self.test_bytes)
-        bytes_read = machine.memory.read(0x200 - len(self.test_bytes), len(self.test_bytes))
+        bytes_read = machine.memory.read(
+            0x200 - len(self.test_bytes), len(self.test_bytes)
+        )
         self.assertEqual(self.test_bytes, bytes_read)
 
 

@@ -12,7 +12,7 @@ TODOs
     - [x] Registers
     - [~] Decoding
         - [x] Correct routing to CALL, Format2, and Format3
-    - [~] Instructions
+    - [x] Instructions
         - [x] CALL
         - [x] SAVE
         - [x] RESTORE
@@ -25,20 +25,21 @@ TODOs
         - [x] JMPL/RETL
         - [x] ST
         - [x] LD
-        - [ ] Bicc (b/ba, bne, bl, be, ble)
-        - [ ] ADD (inc)
-        - [ ] SUB
-        - [ ] SUBCC (cmp)
-        - [ ] SRA
-        - [ ] SMUL
-        - [ ] SDIV
-        - [ ] WRY
+        - [x] Bicc (b/ba, bne, bl, be, ble, bg, bge, bgu, bleu, bcc, bcs, bpos, bneg, bvc, bvs)
+        - [x] ADD
+        - [x] ADDCC
+        - [x] SUB
+        - [x] SUBCC (cmp)
+        - [x] SRA
+        - [x] SMUL
+        - [x] SDIV
+        - [x] WRY
     - [x] Register windows
         - [x] Windows implemented
         - [x] SAVE Instruction
         - [x] RESTORE Instruction
     - [x] Cycling
-    - [ ] Integer Condition Codes (ICC)
+    - [x] Integer Condition Codes (ICC)
     - [~] Testing
 4. Syscalls
     - [x] Write
