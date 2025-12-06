@@ -22,6 +22,8 @@ class SystemMemory:
         if not self.segment_for_addr(start):
             segment: MemorySegment = MemorySegment(start, size)
             self._segments[start] = segment
+            # Invalidate cache since address mappings changed
+            self.segment_for_addr.cache_clear()
             return segment
         else:
             return None
