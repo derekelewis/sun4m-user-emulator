@@ -1,3 +1,4 @@
+from functools import lru_cache
 from .instruction import (
     Instruction,
     CallInstruction,
@@ -7,6 +8,7 @@ from .instruction import (
 )
 
 
+@lru_cache
 def decode(inst: int) -> Instruction:
     op = (inst >> 30) & 0b11
     if op == 1:

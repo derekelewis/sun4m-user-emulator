@@ -158,7 +158,9 @@ class Format3Instruction(Instruction):
 
     def __init__(self, inst: int):
         super().__init__(inst)
-        self.op: int = self.inst >> 30 & 0b11  # op=2 for arithmetic, op=3 for load/store
+        self.op: int = (
+            self.inst >> 30 & 0b11
+        )  # op=2 for arithmetic, op=3 for load/store
         self.rd: int = self.inst >> 25 & 0b11111
         self.op3: int = self.inst >> 19 & 0b111111
         self.rs1: int = self.inst >> 14 & 0b11111
