@@ -1,4 +1,4 @@
-/* hello.c */
+/* hello_world.c */
 
 /* Direct wrapper for the 'write' syscall */
 void my_print(const char *str, int len) {

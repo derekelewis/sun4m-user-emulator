@@ -1,3 +1,6 @@
+/* primes.c */
+
+/* Intentionally unoptimized trial division implementation */
 int calculate_primes(int n) {
 
     int n_primes = 0;
