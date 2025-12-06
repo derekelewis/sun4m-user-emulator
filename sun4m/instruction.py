@@ -1,5 +1,11 @@
-from .cpu import CpuState
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from .syscall import Syscall
+
+if TYPE_CHECKING:
+    from .cpu import CpuState
 
 
 class Instruction:

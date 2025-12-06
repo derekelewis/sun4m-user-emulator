@@ -1,5 +1,6 @@
 from sun4m.register import RegisterFile
 from sun4m.memory import SystemMemory
+from sun4m.decoder import decode
 
 
 class ICC:
@@ -90,8 +91,6 @@ class CpuState:
         self.npc = default_next_npc
 
         inst_word = self._fetch_word(self.pc)
-        # Local import to avoid circular dependency during module import.
-        from .decoder import decode
 
         instruction = decode(inst_word)
         instruction.execute(self)
