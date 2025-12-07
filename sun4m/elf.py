@@ -280,8 +280,8 @@ def load_elf_info(
         elif p_type == PT_PHDR:
             phdr_vaddr = p_vaddr
 
-    # Second pass: load PT_LOAD segments
-    first_load_vaddr: int | None = None
+    # Second pass: load PT_LOAD segments and find which one contains the program headers
+    phdr_load_addr: int | None = None  # Memory address where phdrs are loaded
     for (
         p_type,
         p_offset,
@@ -300,9 +300,12 @@ def load_elf_info(
         _require(p_filesz <= p_memsz, "p_filesz larger than p_memsz")
         _require(p_offset + p_filesz <= len(elf_bytes), "segment exceeds file size")
 
-        # Track first loadable segment (used for phdr_addr if no PT_PHDR)
-        if first_load_vaddr is None:
-            first_load_vaddr = p_vaddr
+        # Check if this segment contains the program headers
+        phdr_end = phoff + phentsize * phnum
+        if p_offset <= phoff and phdr_end <= p_offset + p_filesz:
+            # Program headers are within this segment
+            # Calculate memory address: vaddr + (file_offset_of_phdrs - segment_file_offset)
+            phdr_load_addr = p_vaddr + (phoff - p_offset)
 
         # Apply base address offset
         load_addr = base_addr + p_vaddr
@@ -319,14 +322,12 @@ def load_elf_info(
     if e_type == ET_DYN and base_addr != 0:
         _process_relocations(memory, elf_bytes, base_addr, phoff, phentsize, phnum)
 
-    # Calculate phdr_addr: use PT_PHDR vaddr, or fall back to calculating it
+    # Calculate phdr_addr: use PT_PHDR vaddr, or fall back to address found in PT_LOAD
     if phdr_vaddr:
         phdr_addr = base_addr + phdr_vaddr
-    elif first_load_vaddr is not None:
-        # Program headers are typically at the start of the first loadable segment
-        # Offset into the segment = phoff - (first segment's file offset)
-        # For simplicity, assume headers are at base_addr + phoff (common case)
-        phdr_addr = base_addr + phoff
+    elif phdr_load_addr is not None:
+        # Program headers were found within a PT_LOAD segment
+        phdr_addr = base_addr + phdr_load_addr
     else:
         phdr_addr = 0
 
