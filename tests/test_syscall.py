@@ -912,5 +912,72 @@ class TestSyscallLlseek(unittest.TestCase):
         self.assertEqual(pos, 500)
 
 
+class TestPassthroughPathTranslation(unittest.TestCase):
+    """Tests for passthrough path translation in FileDescriptorTable."""
+
+    def test_no_passthrough_with_sysroot(self):
+        """Test that paths are translated through sysroot when no passthrough."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=[])
+        self.assertEqual(fd_table.translate_path("/bin/ls"), "/sysroot/bin/ls")
+        self.assertEqual(fd_table.translate_path("/etc/passwd"), "/sysroot/etc/passwd")
+
+    def test_passthrough_exact_match(self):
+        """Test that exact passthrough path match bypasses sysroot."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp"])
+        self.assertEqual(fd_table.translate_path("/tmp"), "/tmp")
+
+    def test_passthrough_prefix_match(self):
+        """Test that paths under passthrough prefix bypass sysroot."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home"])
+        self.assertEqual(fd_table.translate_path("/home/user/file"), "/home/user/file")
+        self.assertEqual(fd_table.translate_path("/home/user/dir/file"), "/home/user/dir/file")
+
+    def test_passthrough_does_not_match_similar_prefix(self):
+        """Test that /homedir does not match /home passthrough."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home"])
+        # /homedir should NOT match /home passthrough
+        self.assertEqual(fd_table.translate_path("/homedir/file"), "/sysroot/homedir/file")
+
+    def test_passthrough_trailing_slash(self):
+        """Test passthrough with trailing slash works correctly."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp/"])
+        self.assertEqual(fd_table.translate_path("/tmp/foo"), "/tmp/foo")
+        # /tmp itself does not match /tmp/ passthrough (only children match)
+        self.assertEqual(fd_table.translate_path("/tmp"), "/sysroot/tmp")
+
+    def test_multiple_passthrough_paths(self):
+        """Test multiple passthrough paths work independently."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home", "/tmp"])
+        self.assertEqual(fd_table.translate_path("/home/user"), "/home/user")
+        self.assertEqual(fd_table.translate_path("/tmp/test"), "/tmp/test")
+        self.assertEqual(fd_table.translate_path("/etc/passwd"), "/sysroot/etc/passwd")
+
+    def test_no_sysroot_no_translation(self):
+        """Test that paths are not modified when no sysroot is set."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="", passthrough=[])
+        self.assertEqual(fd_table.translate_path("/bin/ls"), "/bin/ls")
+
+    def test_relative_path_not_translated(self):
+        """Test that relative paths are not translated."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=[])
+        self.assertEqual(fd_table.translate_path("relative/path"), "relative/path")
+
+
 if __name__ == "__main__":
     unittest.main()

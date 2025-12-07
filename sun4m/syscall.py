@@ -24,6 +24,11 @@ ENOSYS = 38  # Function not implemented
 # Page size for memory alignment
 PAGE_SIZE = 4096
 
+# Heap region configuration for brk syscall
+# Starts at 256MB to avoid conflicts with PIE executables
+HEAP_START = 0x10000000
+HEAP_SIZE = 0x20000000  # 512MB
+
 # Linux open flags (SPARC uses same values as generic Linux)
 O_RDONLY = 0
 O_WRONLY = 1
@@ -249,14 +254,10 @@ class Syscall:
         Returns:
           %o0 = current break address, carry clear on success
 
-        The heap starts at 0x10000000 (256MB) to avoid conflicts with PIE
-        executables and has a maximum size of 512MB.
+        The heap starts at HEAP_START (256MB) to avoid conflicts with PIE
+        executables and has a maximum size of HEAP_SIZE (512MB).
         """
         new_brk = self.cpu_state.registers.read_register(8)
-
-        # Heap region: 0x10000000 to 0x30000000 (256MB to 768MB, 512MB total)
-        HEAP_START = 0x10000000
-        HEAP_SIZE = 0x20000000  # 512MB
 
         # Initialize brk if not set
         if self.cpu_state.brk == 0:
@@ -749,6 +750,10 @@ class Syscall:
           %o0 (reg 8) = pathname pointer
         Returns:
           %o0 = 0 on success, -errno on error
+
+        NOTE: This changes the host process's working directory, which may
+        have side effects if the emulator is used as a library or runs
+        multiple guest processes.
         """
         pathname_ptr = self.cpu_state.registers.read_register(8)
         pathname = self._read_string(pathname_ptr)

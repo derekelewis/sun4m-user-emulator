@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import IO
@@ -52,8 +53,6 @@ class FileDescriptorTable:
 
     def open(self, path: str, flags: int, mode: int = 0o644) -> int:
         """Open a file and return its file descriptor, or negative errno on error."""
-        import os
-
         host_path = self.translate_path(path)
 
         # Convert Linux O_* flags to Python mode string
@@ -186,8 +185,6 @@ class FileDescriptorTable:
                 is_special=True,
             )
         elif old_desc.file is not None:
-            import os
-
             # Duplicate the underlying OS file descriptor
             try:
                 new_os_fd = os.dup(old_desc.file.fileno())
