@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import fcntl
 import os
+import select
 import stat
 import struct
 import sys
+import termios
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -44,6 +47,22 @@ O_CLOEXEC = 0x80000
 
 # AT_* constants for openat
 AT_FDCWD = -100
+
+# poll event flags
+POLLIN = 0x0001
+POLLPRI = 0x0002
+POLLOUT = 0x0004
+POLLERR = 0x0008
+POLLHUP = 0x0010
+POLLNVAL = 0x0020
+
+# SPARC terminal ioctl codes
+TCGETS = 0x40245408
+TCSETS = 0x80245409
+TCSETSW = 0x8024540A
+TCSETSF = 0x8024540B
+TIOCGWINSZ = 0x40087468
+TIOCSWINSZ = 0x80087467
 
 # mmap flags
 MAP_SHARED = 0x01
@@ -105,6 +124,8 @@ class Syscall:
                 self._syscall_lseek()
             case 28:
                 self._syscall_fstat64()
+            case 33:
+                self._syscall_access()
             case 32:
                 self._syscall_fchown()
             case 35:
@@ -135,6 +156,8 @@ class Syscall:
                 self._syscall_munmap()  # SPARC 32-bit munmap
             case 74:
                 self._syscall_mprotect()  # SPARC mprotect
+            case 84:
+                self._syscall_lstat()
             case 85:
                 self._syscall_readlink()
             case 87:
@@ -153,6 +176,8 @@ class Syscall:
                 self._syscall_mkdir()
             case 140:
                 self._syscall_sendfile64()
+            case 153:
+                self._syscall_poll()
             case 154:
                 self._syscall_getdents64()
             case 188:
@@ -313,14 +338,167 @@ class Syscall:
           %o0 = errno, carry set on error
         """
         fd = self.cpu_state.registers.read_register(8)
+        request = self.cpu_state.registers.read_register(9)
+        arg = self.cpu_state.registers.read_register(10)
 
-        # Check if fd maps to a real host terminal
-        if fd in (0, 1, 2) and os.isatty(fd):
-            # For terminal ioctls, return 0 (success) to indicate it's a tty
-            # This makes programs like gzip behave correctly when run interactively
-            self._return_success(0)
+        # Handle terminal ioctls for stdin/stdout/stderr
+        if fd in (0, 1, 2):
+            if request == TCGETS:
+                # Get terminal attributes - return defaults or read from host
+                if os.isatty(fd):
+                    try:
+                        attrs = termios.tcgetattr(fd)
+                        self._write_sparc_termios(arg, attrs)
+                    except termios.error:
+                        # Return default termios if we can't get real ones
+                        self._write_default_sparc_termios(arg)
+                else:
+                    self._write_default_sparc_termios(arg)
+                self._return_success(0)
+            elif request in (TCSETS, TCSETSW, TCSETSF):
+                # Set terminal attributes - apply to host if possible
+                if os.isatty(fd):
+                    try:
+                        attrs = self._read_sparc_termios(arg)
+                        when = termios.TCSANOW
+                        if request == TCSETSW:
+                            when = termios.TCSADRAIN
+                        elif request == TCSETSF:
+                            when = termios.TCSAFLUSH
+                        termios.tcsetattr(fd, when, attrs)
+                    except (termios.error, Exception):
+                        pass  # Silently ignore errors, vi will still work
+                self._return_success(0)
+            elif request == TIOCGWINSZ:
+                # Get window size
+                if os.isatty(fd):
+                    try:
+                        result = fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\x00" * 8)
+                        self.cpu_state.memory.write(arg, result)
+                        self._return_success(0)
+                        return
+                    except OSError:
+                        pass
+                # Return default size
+                ws = struct.pack(">HHHH", 24, 80, 0, 0)
+                self.cpu_state.memory.write(arg, ws)
+                self._return_success(0)
+            elif request == TIOCSWINSZ:
+                self._return_success(0)
+            else:
+                # Unknown ioctl - return success for tty fds
+                self._return_success(0)
         else:
             self._return_error(ENOTTY)
+
+    def _write_default_sparc_termios(self, addr: int) -> None:
+        """Write default termios attributes for a typical terminal."""
+        # Default flags for a typical cooked mode terminal
+        iflag = 0x2D02  # ICRNL | IXON | IXOFF | IMAXBEL
+        oflag = 0x0005  # OPOST | ONLCR
+        cflag = 0x00BF  # CS8 | CREAD | CLOCAL
+        lflag = 0x8A3B  # ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHOCTL | ECHOKE | IEXTEN
+        buf = bytearray(36)
+        struct.pack_into(">I", buf, 0, iflag)
+        struct.pack_into(">I", buf, 4, oflag)
+        struct.pack_into(">I", buf, 8, cflag)
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+        # Default control characters
+        cc_defaults = [
+            0x03, 0x1C, 0x7F, 0x15, 0x04, 0x00, 0x01, 0x00,
+            0x11, 0x13, 0x1A, 0x00, 0x12, 0x0F, 0x17, 0x16, 0x00
+        ]
+        for i, c in enumerate(cc_defaults):
+            buf[17 + i] = c
+        self.cpu_state.memory.write(addr, bytes(buf))
+
+    def _write_sparc_termios(self, addr: int, attrs: list) -> None:
+        """Write host termios attributes to SPARC termios structure.
+
+        SPARC termios (36 bytes):
+          c_iflag: 4 bytes
+          c_oflag: 4 bytes
+          c_cflag: 4 bytes
+          c_lflag: 4 bytes
+          c_line:  1 byte
+          c_cc:    19 bytes (NCCS=19 on SPARC)
+          padding: 4 bytes (to align to 36)
+        """
+        iflag, oflag, cflag, lflag, ispeed, ospeed, cc = attrs
+        buf = bytearray(36)
+        struct.pack_into(">I", buf, 0, iflag)
+        struct.pack_into(">I", buf, 4, oflag)
+        struct.pack_into(">I", buf, 8, cflag)
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+        # Copy control characters (up to 19)
+        for i, c in enumerate(cc[:19]):
+            if isinstance(c, int):
+                buf[17 + i] = c
+            elif isinstance(c, bytes) and len(c) > 0:
+                buf[17 + i] = c[0]
+        self.cpu_state.memory.write(addr, bytes(buf))
+
+    def _read_sparc_termios(self, addr: int) -> list:
+        """Read SPARC termios structure and convert to host format.
+
+        SPARC and x86_64 have different c_cc indices. Key differences:
+        - SPARC: VMIN=4, VTIME=5 (non-canonical), VEOF=4, VEOL=5 (canonical)
+        - x86_64: VMIN=6, VTIME=5, VEOF=4, VEOL=11
+        We need to translate these for raw mode to work correctly.
+        """
+        data = self.cpu_state.memory.read(addr, 36)
+        iflag = struct.unpack(">I", data[0:4])[0]
+        oflag = struct.unpack(">I", data[4:8])[0]
+        cflag = struct.unpack(">I", data[8:12])[0]
+        lflag = struct.unpack(">I", data[12:16])[0]
+        # c_line at offset 16
+        # c_cc at offset 17, 17 bytes on SPARC (NCCS=17)
+        sparc_cc = list(data[17:34])
+
+        # SPARC c_cc indices (from asm-sparc/termbits.h):
+        # VINTR=0, VQUIT=1, VERASE=2, VKILL=3, VEOF=4, VEOL=5, VEOL2=6, VSWTC=7
+        # VSTART=8, VSTOP=9, VSUSP=10, VDSUSP=11, VREPRINT=12, VDISCARD=13
+        # VWERASE=14, VLNEXT=15, VMIN=VEOF=4, VTIME=VEOL=5
+
+        # x86_64 c_cc indices (from bits/termios-c_cc.h):
+        # VINTR=0, VQUIT=1, VERASE=2, VKILL=3, VEOF=4, VTIME=5, VMIN=6, VSWTC=7
+        # VSTART=8, VSTOP=9, VSUSP=10, VEOL=11, VREPRINT=12, VDISCARD=13
+        # VWERASE=14, VLNEXT=15
+
+        # Create host cc array with proper mapping
+        host_cc = [0] * 32
+        # Direct mappings (same index on both)
+        for i in [0, 1, 2, 3, 8, 9, 10, 12, 13, 14, 15]:
+            if i < len(sparc_cc):
+                host_cc[i] = sparc_cc[i]
+
+        # Check if we're in non-canonical mode (ICANON not set)
+        ICANON = 0x2
+        if not (lflag & ICANON):
+            # Non-canonical mode: SPARC index 4 is VMIN, index 5 is VTIME
+            if len(sparc_cc) > 4:
+                host_cc[6] = sparc_cc[4]  # VMIN: SPARC[4] -> x86_64[6]
+            if len(sparc_cc) > 5:
+                host_cc[5] = sparc_cc[5]  # VTIME: same index
+            # Set VEOF to default
+            host_cc[4] = 0x04  # Ctrl-D
+        else:
+            # Canonical mode: index 4 is VEOF, index 5 is VEOL
+            if len(sparc_cc) > 4:
+                host_cc[4] = sparc_cc[4]  # VEOF
+            if len(sparc_cc) > 5:
+                host_cc[11] = sparc_cc[5]  # VEOL: SPARC[5] -> x86_64[11]
+
+        # VEOL2 and others
+        if len(sparc_cc) > 6:
+            host_cc[16] = sparc_cc[6]  # VEOL2
+        if len(sparc_cc) > 7:
+            host_cc[7] = sparc_cc[7]  # VSWTC
+
+        # Return in termios.tcgetattr format
+        return [iflag, oflag, cflag, lflag, termios.B38400, termios.B38400, host_cc]
 
     def _syscall_getrandom(self):
         """
@@ -353,6 +531,33 @@ class Syscall:
                 break
             result.append(byte[0])
         return result.decode("utf-8", errors="replace")
+
+    def _syscall_access(self):
+        """
+        access syscall implementation
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+          %o1 (reg 9) = mode (F_OK=0, R_OK=4, W_OK=2, X_OK=1)
+        Returns:
+          %o0 = 0 on success, carry clear
+          %o0 = errno, carry set on error
+        """
+        pathname_ptr = self.cpu_state.registers.read_register(8)
+        mode = self.cpu_state.registers.read_register(9)
+
+        pathname = self._read_string(pathname_ptr)
+        host_path = self.cpu_state.fd_table.translate_path(pathname)
+
+        # Check if path exists first (os.access returns False for non-existent)
+        if not os.path.exists(host_path):
+            self._return_error(ENOENT)
+            return
+
+        # Now check the requested permissions
+        if os.access(host_path, mode):
+            self._return_success(0)
+        else:
+            self._return_error(EACCES)
 
     def _syscall_open(self):
         """
@@ -595,6 +800,133 @@ class Syscall:
         else:
             self._return_success(0)
 
+    def _syscall_poll(self):
+        """
+        poll syscall implementation
+        Arguments:
+          %o0 (reg 8) = fds pointer (array of pollfd structs)
+          %o1 (reg 9) = nfds (number of file descriptors)
+          %o2 (reg 10) = timeout in milliseconds (-1 = infinite, 0 = return immediately)
+        Returns:
+          %o0 = number of fds with events, carry clear on success
+          %o0 = errno, carry set on error
+
+        struct pollfd {
+            int   fd;         /* file descriptor */
+            short events;     /* requested events */
+            short revents;    /* returned events */
+        };  // 8 bytes total on 32-bit
+        """
+        fds_ptr = self.cpu_state.registers.read_register(8)
+        nfds = self.cpu_state.registers.read_register(9)
+        timeout = self.cpu_state.registers.read_register(10)
+        # Handle signed timeout (-1 = infinite)
+        if timeout & 0x80000000:
+            timeout = timeout - 0x100000000
+
+        if nfds == 0:
+            self._return_success(0)
+            return
+
+        # Read pollfd structures (8 bytes each: int fd, short events, short revents)
+        read_fds: list[int] = []
+        write_fds: list[int] = []
+        except_fds: list[int] = []
+        fd_to_idx: dict[int, int] = {}  # Map host fd to pollfd index
+
+        for i in range(nfds):
+            pollfd_data = self.cpu_state.memory.read(fds_ptr + i * 8, 8)
+            fd = struct.unpack(">i", pollfd_data[0:4])[0]
+            events = struct.unpack(">h", pollfd_data[4:6])[0]
+
+            if fd < 0:
+                continue
+
+            # Map guest fd to host fd for select
+            host_fd = fd  # For special fds (0,1,2), they map directly
+            desc = self.cpu_state.fd_table.get(fd)
+            if desc is not None:
+                if desc.is_special:
+                    host_fd = fd
+                elif desc.file is not None:
+                    host_fd = desc.file.fileno()
+                elif desc.is_directory and desc.dir_fd is not None:
+                    host_fd = desc.dir_fd
+                else:
+                    continue
+
+            fd_to_idx[host_fd] = i
+
+            if events & (POLLIN | POLLPRI):
+                read_fds.append(host_fd)
+            if events & POLLOUT:
+                write_fds.append(host_fd)
+            except_fds.append(host_fd)
+
+        # Convert timeout to seconds for select (None for infinite)
+        if timeout < 0:
+            timeout_sec = None
+        else:
+            timeout_sec = timeout / 1000.0
+
+        try:
+            readable, writable, exceptional = select.select(
+                read_fds, write_fds, except_fds, timeout_sec
+            )
+        except (OSError, ValueError) as e:
+            self._return_error(EBADF)
+            return
+
+        # Write revents back to pollfd structures
+        count = 0
+        for i in range(nfds):
+            pollfd_data = self.cpu_state.memory.read(fds_ptr + i * 8, 8)
+            fd = struct.unpack(">i", pollfd_data[0:4])[0]
+
+            if fd < 0:
+                # Write back with revents = 0
+                self.cpu_state.memory.write(fds_ptr + i * 8 + 6, struct.pack(">h", 0))
+                continue
+
+            # Find the host fd for this guest fd
+            desc = self.cpu_state.fd_table.get(fd)
+            if desc is None:
+                # Invalid fd - set POLLNVAL
+                self.cpu_state.memory.write(
+                    fds_ptr + i * 8 + 6, struct.pack(">h", POLLNVAL)
+                )
+                count += 1
+                continue
+
+            if desc.is_special:
+                host_fd = fd
+            elif desc.file is not None:
+                host_fd = desc.file.fileno()
+            elif desc.is_directory and desc.dir_fd is not None:
+                host_fd = desc.dir_fd
+            else:
+                self.cpu_state.memory.write(
+                    fds_ptr + i * 8 + 6, struct.pack(">h", POLLNVAL)
+                )
+                count += 1
+                continue
+
+            revents = 0
+            if host_fd in readable:
+                revents |= POLLIN
+            if host_fd in writable:
+                revents |= POLLOUT
+            if host_fd in exceptional:
+                revents |= POLLERR
+
+            if revents != 0:
+                count += 1
+
+            # Write revents back
+            self.cpu_state.memory.write(fds_ptr + i * 8 + 6, struct.pack(">h", revents))
+
+        self._return_success(count)
+
     def _write_stat64(self, addr: int, st: os.stat_result) -> None:
         """Write a stat64 structure to guest memory.
 
@@ -736,6 +1068,33 @@ class Syscall:
 
         try:
             st = os.stat(host_path)
+            self._write_stat64(stat_buf, st)
+            self._return_success(0)
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)
+
+    def _syscall_lstat(self):
+        """
+        lstat syscall implementation (doesn't follow symlinks)
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+          %o1 (reg 9) = stat buffer pointer
+        Returns:
+          %o0 = 0, carry clear on success
+          %o0 = errno, carry set on error
+        """
+        pathname_ptr = self.cpu_state.registers.read_register(8)
+        stat_buf = self.cpu_state.registers.read_register(9)
+
+        pathname = self._read_string(pathname_ptr)
+        host_path = self.cpu_state.fd_table.translate_path(pathname)
+
+        try:
+            st = os.lstat(host_path)
             self._write_stat64(stat_buf, st)
             self._return_success(0)
         except FileNotFoundError:

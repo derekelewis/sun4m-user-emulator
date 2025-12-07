@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 # Memory protection flags (matching Linux)
 PROT_NONE = 0x0
 PROT_READ = 0x1
@@ -16,6 +14,8 @@ MMAP_END = 0x80000000
 
 class MemorySegment:
     """Represents a virtual address space segment of contiguous memory"""
+
+    __slots__ = ("start", "end", "buffer", "permissions", "name")
 
     def __init__(
         self,
@@ -34,10 +34,14 @@ class MemorySegment:
 class SystemMemory:
     """Represents address space"""
 
+    __slots__ = ("_segments", "_mmap_next", "_last_segment")
+
     def __init__(self):
         self._segments: dict[int, MemorySegment] = dict()
         # Track next free address in mmap region for anonymous mappings
         self._mmap_next: int = MMAP_BASE
+        # Cache for last accessed segment (most accesses hit same segment)
+        self._last_segment: MemorySegment | None = None
 
     def add_segment(
         self,
@@ -52,7 +56,7 @@ class SystemMemory:
             segment = MemorySegment(start, size, permissions, name)
             self._segments[start] = segment
             # Invalidate cache since address mappings changed
-            self.segment_for_addr.cache_clear()
+            self._last_segment = None
             return segment
         else:
             return None
@@ -223,7 +227,7 @@ class SystemMemory:
             self._segments[start] = seg
 
         if to_remove or to_add:
-            self.segment_for_addr.cache_clear()
+            self._last_segment = None
 
     def remove_segment_range(self, addr: int, size: int) -> bool:
         """Remove/unmap a memory region.
@@ -244,7 +248,7 @@ class SystemMemory:
             del self._segments[start]
 
         if to_remove:
-            self.segment_for_addr.cache_clear()
+            self._last_segment = None
             return True
         return False
 
@@ -259,33 +263,46 @@ class SystemMemory:
             return True
         return False
 
-    @lru_cache
     def segment_for_addr(self, addr: int) -> MemorySegment | None:
         """Retrieve segment given an address"""
-        # TODO: replace linear search with something better
+        # Fast path: check last accessed segment first (locality optimization)
+        seg = self._last_segment
+        if seg is not None and seg.start <= addr < seg.end:
+            return seg
+        # Linear search through segments
         for segment in self._segments.values():
             if segment.start <= addr < segment.end:
+                self._last_segment = segment
                 return segment
         return None
 
     def read(self, addr: int, size: int) -> bytes:
         """Read bytes from memory"""
-
+        # Inline fast path: check last segment first
+        seg = self._last_segment
+        if seg is not None and seg.start <= addr and (addr + size) <= seg.end:
+            offset = addr - seg.start
+            return seg.buffer[offset : offset + size]
+        # Slow path: find segment
         segment = self.segment_for_addr(addr)
-        # guard against reads that span segments
         if segment and segment.start <= (addr + size) <= segment.end:
             offset = addr - segment.start
             return segment.buffer[offset : offset + size]
-        else:
-            raise MemoryError(f"invalid or cross-segment read at {addr:#010x}")
+        raise MemoryError(f"invalid or cross-segment read at {addr:#010x}")
 
     def write(self, addr: int, input: bytes) -> None:
         """Write bytes to memory"""
-
+        # Inline fast path: check last segment first
+        seg = self._last_segment
+        size = len(input)
+        if seg is not None and seg.start <= addr and (addr + size) <= seg.end:
+            offset = addr - seg.start
+            seg.buffer[offset : offset + size] = input
+            return
+        # Slow path: find segment
         segment = self.segment_for_addr(addr)
-        # guard against writes that span segments
-        if segment and segment.start <= (addr + len(input)) <= segment.end:
+        if segment and segment.start <= (addr + size) <= segment.end:
             offset = addr - segment.start
-            segment.buffer[offset : offset + len(input)] = input
-        else:
-            raise MemoryError(f"invalid or cross-segment write at {addr:#010x}")
+            segment.buffer[offset : offset + size] = input
+            return
+        raise MemoryError(f"invalid or cross-segment write at {addr:#010x}")

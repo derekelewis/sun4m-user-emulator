@@ -1,4 +1,5 @@
 import argparse
+import cProfile
 import sys
 
 from .machine import Machine
@@ -22,6 +23,15 @@ parser.add_argument(
     metavar="PATH",
     help="host path to access directly, bypassing sysroot (can be used multiple times)",
 )
+parser.add_argument(
+    "--profile",
+    type=str,
+    nargs="?",
+    const="profile.stats",
+    default=None,
+    metavar="FILE",
+    help="enable cProfile and write stats to FILE (default: profile.stats)",
+)
 parser.add_argument("file", help="ELF binary to execute")
 parser.add_argument(
     "program_args",
@@ -43,4 +53,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if args.profile:
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            main()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            profiler.disable()
+            profiler.dump_stats(args.profile)
+            print(f"\nProfile stats written to {args.profile}", file=sys.stderr)
+    else:
+        main()
