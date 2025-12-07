@@ -90,18 +90,24 @@ class Syscall:
                 self._syscall_open()
             case 6:
                 self._syscall_close()
+            case 10:
+                self._syscall_unlink()
             case 17:
                 self._syscall_brk()
             case 19:
                 self._syscall_lseek()
             case 28:
                 self._syscall_fstat64()
+            case 32:
+                self._syscall_fchown()
             case 38:
                 self._syscall_stat()
             case 54:
                 self._syscall_ioctl()
             case 56:
                 self._syscall_mmap2()  # SPARC 32-bit mmap2
+            case 62:
+                self._syscall_fstat()  # fstat (old version, same as fstat64)
             case 71:
                 self._syscall_mmap()
             case 73:
@@ -110,16 +116,32 @@ class Syscall:
                 self._syscall_mprotect()  # SPARC mprotect
             case 85:
                 self._syscall_readlink()
+            case 102:
+                self._syscall_rt_sigaction()
+            case 103:
+                self._syscall_rt_sigprocmask()
+            case 124:
+                self._syscall_fchmod()
             case 188:
                 self._syscall_exit()  # exit_group - same as exit for single-threaded
             case 215:
                 self._syscall_stat64()
-            case 288:
+            case 284:
                 self._syscall_openat()
+            case 166:
+                self._syscall_set_tid_address()
             case 294:
                 self._syscall_readlinkat()
-            case 360:
+            case 300:
+                self._syscall_set_robust_list()
+            case 331:
+                self._syscall_prlimit64()
+            case 347:
                 self._syscall_getrandom()
+            case 360:
+                self._syscall_statx()
+            case 412:
+                self._syscall_utimensat()
             case _:
                 raise ValueError(f"syscall {syscall_number} not implemented")
 
@@ -457,6 +479,19 @@ class Syscall:
         except OSError as e:
             self._return_error(e.errno if e.errno else EBADF)
 
+    def _syscall_fstat(self):
+        """
+        fstat syscall implementation (old version, uses stat64 format)
+        Arguments:
+          %o0 (reg 8) = file descriptor
+          %o1 (reg 9) = stat buffer pointer
+        Returns:
+          %o0 = 0, carry clear on success
+          %o0 = errno, carry set on error
+        """
+        # Delegate to fstat64 implementation
+        self._syscall_fstat64()
+
     def _syscall_stat(self):
         """
         stat syscall implementation (old 32-bit version)
@@ -489,6 +524,73 @@ class Syscall:
         try:
             st = os.stat(host_path)
             self._write_stat64(stat_buf, st)
+            self._return_success(0)
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)
+
+    def _syscall_fchown(self):
+        """
+        fchown / fchown32 syscall implementation
+        Arguments:
+          %o0 (reg 8) = fd
+          %o1 (reg 9) = owner
+          %o2 (reg 10) = group
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        fd = self.cpu_state.registers.read_register(8)
+
+        desc = self.cpu_state.fd_table.get(fd)
+        if desc is None:
+            self._return_error(EBADF)
+            return
+
+        # Stub: just return success - we don't actually change ownership
+        self._return_success(0)
+
+    def _syscall_fchmod(self):
+        """
+        fchmod syscall implementation
+        Arguments:
+          %o0 (reg 8) = fd
+          %o1 (reg 9) = mode
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        fd = self.cpu_state.registers.read_register(8)
+        mode = self.cpu_state.registers.read_register(9)
+
+        desc = self.cpu_state.fd_table.get(fd)
+        if desc is None:
+            self._return_error(EBADF)
+            return
+
+        # Actually change permissions on the underlying file
+        try:
+            if desc.file is not None:
+                os.fchmod(desc.file.fileno(), mode)
+            self._return_success(0)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else EACCES)
+
+    def _syscall_unlink(self):
+        """
+        unlink syscall implementation
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        pathname_ptr = self.cpu_state.registers.read_register(8)
+        pathname = self._read_string(pathname_ptr)
+        host_path = self.cpu_state.fd_table.translate_path(pathname)
+
+        try:
+            os.unlink(host_path)
             self._return_success(0)
         except FileNotFoundError:
             self._return_error(ENOENT)
@@ -589,17 +691,14 @@ class Syscall:
             self._return_error(EINVAL)
             return
 
+        is_fixed = bool(flags & MAP_FIXED)
+
         # Handle MAP_ANONYMOUS - no file backing
         if flags & MAP_ANONYMOUS:
             # Allocate anonymous memory
-            if flags & MAP_FIXED:
-                # Must map at exact address
-                segment = self.cpu_state.memory.allocate_at(addr, length, prot)
-            else:
-                # Let the system choose address (hint is optional)
-                segment = self.cpu_state.memory.allocate_at(
-                    addr if addr else 0, length, prot
-                )
+            segment = self.cpu_state.memory.allocate_at(
+                addr if (addr or is_fixed) else 0, length, prot, fixed=is_fixed
+            )
 
             if segment is None:
                 self._return_error(EINVAL)  # Could be ENOMEM
@@ -616,12 +715,9 @@ class Syscall:
             return
 
         # Allocate the memory region
-        if flags & MAP_FIXED:
-            segment = self.cpu_state.memory.allocate_at(addr, length, prot)
-        else:
-            segment = self.cpu_state.memory.allocate_at(
-                addr if addr else 0, length, prot
-            )
+        segment = self.cpu_state.memory.allocate_at(
+            addr if (addr or is_fixed) else 0, length, prot, fixed=is_fixed
+        )
 
         if segment is None:
             self._return_error(EINVAL)
@@ -715,6 +811,18 @@ class Syscall:
             self._return_error(EBADF)
             return
 
+        # Emulate /proc/self/exe - return the path to the executable
+        if pathname == "/proc/self/exe":
+            target = self.cpu_state.exe_path
+            if not target:
+                self._return_error(ENOENT)
+                return
+            target_bytes = target.encode("utf-8")
+            to_write = target_bytes[:bufsiz]
+            self.cpu_state.memory.write(buf_ptr, to_write)
+            self._return_success(len(to_write))
+            return
+
         host_path = self.cpu_state.fd_table.translate_path(pathname)
 
         try:
@@ -730,3 +838,250 @@ class Syscall:
                 self._return_error(EINVAL)
             else:
                 self._return_error(e.errno if e.errno else ENOENT)
+
+    def _syscall_set_tid_address(self):
+        """
+        set_tid_address syscall implementation
+        Arguments:
+          %o0 (reg 8) = tidptr - pointer where to store TID on exit
+        Returns:
+          %o0 = caller's thread ID (same as PID for single-threaded)
+        """
+        # Just store the pointer and return a fixed TID (same as our PID)
+        # For single-threaded emulation, we don't actually need to use tidptr
+        self._return_success(1000)  # Fixed TID matching our fake UID/GID
+
+    def _syscall_set_robust_list(self):
+        """
+        set_robust_list syscall implementation
+        Arguments:
+          %o0 (reg 8) = head - pointer to robust list head
+          %o1 (reg 9) = len - size of the structure
+        Returns:
+          %o0 = 0 on success
+        """
+        # Stub for single-threaded emulation - just return success
+        self._return_success(0)
+
+    def _syscall_rt_sigaction(self):
+        """
+        rt_sigaction syscall implementation
+        Arguments:
+          %o0 (reg 8) = signum - signal number
+          %o1 (reg 9) = act - pointer to new action (or NULL)
+          %o2 (reg 10) = oldact - pointer to store old action (or NULL)
+          %o3 (reg 11) = sigsetsize - size of sigset_t
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        # Stub: Accept any signal setup but don't actually do anything
+        # A real implementation would track signal handlers
+        self._return_success(0)
+
+    def _syscall_rt_sigprocmask(self):
+        """
+        rt_sigprocmask syscall implementation
+        Arguments:
+          %o0 (reg 8) = how - SIG_BLOCK, SIG_UNBLOCK, or SIG_SETMASK
+          %o1 (reg 9) = set - pointer to new signal mask (or NULL)
+          %o2 (reg 10) = oldset - pointer to store old mask (or NULL)
+          %o3 (reg 11) = sigsetsize - size of sigset_t
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        # Stub: Accept any mask operation but don't actually do anything
+        self._return_success(0)
+
+    def _syscall_prlimit64(self):
+        """
+        prlimit64 syscall implementation
+        Arguments:
+          %o0 (reg 8) = pid - process ID (0 = current)
+          %o1 (reg 9) = resource - resource type (RLIMIT_*)
+          %o2 (reg 10) = new_limit - pointer to new limit (or NULL)
+          %o3 (reg 11) = old_limit - pointer to store old limit (or NULL)
+        Returns:
+          %o0 = 0 on success, -errno on error
+
+        RLIMIT_STACK = 3, RLIMIT_NOFILE = 6, etc.
+        """
+        old_limit_ptr = self.cpu_state.registers.read_register(11)
+
+        if old_limit_ptr != 0:
+            # Return some reasonable default limits
+            # rlimit64 structure: 2 x 8-byte values (rlim_cur, rlim_max)
+            # Using RLIM_INFINITY (0xffffffffffffffff) for most
+            rlim_cur = 0xFFFFFFFFFFFFFFFF  # RLIM_INFINITY
+            rlim_max = 0xFFFFFFFFFFFFFFFF  # RLIM_INFINITY
+            self.cpu_state.memory.write(
+                old_limit_ptr, struct.pack(">QQ", rlim_cur, rlim_max)
+            )
+
+        self._return_success(0)
+
+    def _syscall_statx(self):
+        """
+        statx syscall implementation
+        Arguments:
+          %o0 (reg 8) = dirfd (AT_FDCWD for current directory, or fd)
+          %o1 (reg 9) = pathname pointer
+          %o2 (reg 10) = flags (AT_EMPTY_PATH = 0x1000)
+          %o3 (reg 11) = mask (which fields to fill)
+          %o4 (reg 12) = statxbuf pointer
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        AT_EMPTY_PATH = 0x1000
+
+        dirfd = self.cpu_state.registers.read_register(8)
+        pathname_ptr = self.cpu_state.registers.read_register(9)
+        flags = self.cpu_state.registers.read_register(10)
+        # mask = self.cpu_state.registers.read_register(11)
+        statxbuf = self.cpu_state.registers.read_register(12)
+
+        pathname = self._read_string(pathname_ptr)
+
+        try:
+            # Handle AT_EMPTY_PATH with fd - stat the fd directly
+            if (flags & AT_EMPTY_PATH) and (pathname == "" or pathname_ptr == 0):
+                # dirfd is an actual file descriptor
+                desc = self.cpu_state.fd_table.get(dirfd)
+                if desc is None:
+                    self._return_error(EBADF)
+                    return
+                if desc.is_special:
+                    st = os.fstat(dirfd)
+                elif desc.file is not None:
+                    st = os.fstat(desc.file.fileno())
+                else:
+                    self._return_error(EBADF)
+                    return
+            elif dirfd == (AT_FDCWD & 0xFFFFFFFF) or pathname.startswith("/"):
+                # Normal path-based stat
+                host_path = self.cpu_state.fd_table.translate_path(pathname)
+                st = os.stat(host_path)
+            else:
+                # Relative path with dirfd - not fully supported yet
+                # For now, just try the path directly
+                host_path = self.cpu_state.fd_table.translate_path(pathname)
+                st = os.stat(host_path)
+
+            self._write_statx(statxbuf, st)
+            self._return_success(0)
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)
+
+    def _write_statx(self, addr: int, st: os.stat_result) -> None:
+        """Write a statx structure to guest memory.
+
+        struct statx layout (256 bytes):
+          0x00: stx_mask (4 bytes)
+          0x04: stx_blksize (4 bytes)
+          0x08: stx_attributes (8 bytes)
+          0x10: stx_nlink (4 bytes)
+          0x14: stx_uid (4 bytes)
+          0x18: stx_gid (4 bytes)
+          0x1c: stx_mode (2 bytes)
+          0x1e: padding (2 bytes)
+          0x20: stx_ino (8 bytes)
+          0x28: stx_size (8 bytes)
+          0x30: stx_blocks (8 bytes)
+          0x38: stx_attributes_mask (8 bytes)
+          0x40: stx_atime (16 bytes: tv_sec, tv_nsec, padding)
+          0x50: stx_btime (16 bytes)
+          0x60: stx_ctime (16 bytes)
+          0x70: stx_mtime (16 bytes)
+          ... more fields up to 256 bytes
+        """
+        buf = bytearray(256)
+
+        # stx_mask - indicate which fields are valid
+        STATX_BASIC_STATS = 0x7ff
+        struct.pack_into(">I", buf, 0x00, STATX_BASIC_STATS)
+        # stx_blksize
+        struct.pack_into(">I", buf, 0x04, st.st_blksize)
+        # stx_attributes (8 bytes)
+        struct.pack_into(">Q", buf, 0x08, 0)
+        # stx_nlink
+        struct.pack_into(">I", buf, 0x10, st.st_nlink)
+        # stx_uid
+        struct.pack_into(">I", buf, 0x14, st.st_uid)
+        # stx_gid
+        struct.pack_into(">I", buf, 0x18, st.st_gid)
+        # stx_mode (2 bytes)
+        struct.pack_into(">H", buf, 0x1c, st.st_mode)
+        # stx_ino (8 bytes)
+        struct.pack_into(">Q", buf, 0x20, st.st_ino)
+        # stx_size (8 bytes)
+        struct.pack_into(">Q", buf, 0x28, st.st_size)
+        # stx_blocks (8 bytes)
+        struct.pack_into(">Q", buf, 0x30, st.st_blocks)
+        # stx_attributes_mask (8 bytes)
+        struct.pack_into(">Q", buf, 0x38, 0)
+        # stx_atime (tv_sec 8 bytes, tv_nsec 4 bytes, padding 4 bytes)
+        struct.pack_into(">Q", buf, 0x40, int(st.st_atime))
+        struct.pack_into(">I", buf, 0x48, int((st.st_atime % 1) * 1e9))
+        # stx_btime (birth time - use mtime as fallback)
+        struct.pack_into(">Q", buf, 0x50, int(st.st_mtime))
+        struct.pack_into(">I", buf, 0x58, int((st.st_mtime % 1) * 1e9))
+        # stx_ctime
+        struct.pack_into(">Q", buf, 0x60, int(st.st_ctime))
+        struct.pack_into(">I", buf, 0x68, int((st.st_ctime % 1) * 1e9))
+        # stx_mtime
+        struct.pack_into(">Q", buf, 0x70, int(st.st_mtime))
+        struct.pack_into(">I", buf, 0x78, int((st.st_mtime % 1) * 1e9))
+        # stx_rdev_major, stx_rdev_minor
+        struct.pack_into(">I", buf, 0x80, os.major(st.st_rdev))
+        struct.pack_into(">I", buf, 0x84, os.minor(st.st_rdev))
+        # stx_dev_major, stx_dev_minor
+        struct.pack_into(">I", buf, 0x88, os.major(st.st_dev))
+        struct.pack_into(">I", buf, 0x8c, os.minor(st.st_dev))
+
+        self.cpu_state.memory.write(addr, bytes(buf))
+
+    def _syscall_utimensat(self):
+        """
+        utimensat / utimensat_time64 syscall implementation
+        Arguments:
+          %o0 (reg 8) = dirfd
+          %o1 (reg 9) = pathname pointer
+          %o2 (reg 10) = times array pointer (or NULL for now)
+          %o3 (reg 11) = flags
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        dirfd = self.cpu_state.registers.read_register(8)
+        pathname_ptr = self.cpu_state.registers.read_register(9)
+        # times_ptr = self.cpu_state.registers.read_register(10)
+        # flags = self.cpu_state.registers.read_register(11)
+
+        # If pathname is NULL/empty, operate on dirfd
+        if pathname_ptr == 0:
+            # Operating on the fd directly - just return success
+            # A full implementation would set the timestamps
+            self._return_success(0)
+            return
+
+        pathname = self._read_string(pathname_ptr)
+
+        # Handle AT_FDCWD
+        if dirfd == (AT_FDCWD & 0xFFFFFFFF) or pathname.startswith("/"):
+            host_path = self.cpu_state.fd_table.translate_path(pathname)
+        else:
+            host_path = pathname
+
+        # For now, just touch the file to update timestamps
+        # A full implementation would parse the times array
+        try:
+            os.utime(host_path, None)  # Set to current time
+            self._return_success(0)
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)

@@ -54,6 +54,11 @@ class Machine:
         with open(file, "rb") as f:
             elf_bytes = f.read()
 
+        # Store the executable path for /proc/self/exe emulation
+        # Use absolute path so the dynamic linker can find libraries relative to it
+        import os
+        self.cpu.exe_path = os.path.abspath(file)
+
         # Load the main executable
         main_info = load_elf_info(self.memory, elf_bytes, base_addr=0)
         self.entrypoint = main_info.entry_point
@@ -171,13 +176,11 @@ class Machine:
             self.cpu.memory.write(data_ptr, env_bytes)
             envp_string_addrs.append(data_ptr)
 
-        # Copy program headers to stack for AT_PHDR
-        # The dynamic linker needs access to the main program's phdrs
-        phdr_data = main_info.program_headers
-        data_ptr -= len(phdr_data)
-        data_ptr &= ~7  # Align
-        phdr_stack_addr = data_ptr
-        self.cpu.memory.write(phdr_stack_addr, phdr_data)
+        # For PIE executables, AT_PHDR should point to the actual loaded location
+        # of program headers within the executable's memory (not a stack copy).
+        # This allows the linker to calculate the base address correctly.
+        # For non-PIE (ET_EXEC), this is the absolute address in the ELF.
+        # For PIE (ET_DYN) loaded at base 0, this is just the phdr offset.
 
         # Align data_ptr for the arrays below
         data_ptr &= ~7
@@ -185,8 +188,9 @@ class Machine:
         # Build auxv entries
         auxv: list[tuple[int, int]] = []
 
-        # AT_PHDR - address of program headers (on stack)
-        auxv.append((AT_PHDR, phdr_stack_addr))
+        # AT_PHDR - address of program headers (within loaded executable)
+        # main_info.phdr_addr is base_addr + phdr_vaddr for PIE
+        auxv.append((AT_PHDR, main_info.phdr_addr))
         # AT_PHENT - size of program header entry
         auxv.append((AT_PHENT, main_info.phdr_size))
         # AT_PHNUM - number of program headers

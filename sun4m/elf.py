@@ -37,6 +37,17 @@ PT_PHDR = 6
 # Program header size for 32-bit ELF
 PHDR_SIZE = 32
 
+# Dynamic section tags
+DT_NULL = 0
+DT_NEEDED = 1
+DT_RELA = 7  # Address of Rela relocs
+DT_RELASZ = 8  # Total size of Rela relocs
+DT_RELAENT = 9  # Size of one Rela reloc
+
+# SPARC relocation types
+R_SPARC_NONE = 0
+R_SPARC_RELATIVE = 22  # Adjust by program base
+
 
 ProgramHeader = Tuple[int, int, int, int, int, int, int, int]
 
@@ -134,6 +145,101 @@ def load_elf(memory: SystemMemory, elf_bytes: bytes, base_addr: int = 0) -> int:
     return info.entry_point
 
 
+def _process_relocations(
+    memory: SystemMemory, elf_bytes: bytes, base_addr: int, phoff: int, phentsize: int, phnum: int
+) -> None:
+    """Process relocations for position-independent code.
+
+    This is essential for shared objects like ld-uClibc.so.0 which use
+    R_SPARC_RELATIVE relocations to adjust pointers based on load address.
+    """
+    # Find PT_DYNAMIC to get relocation info
+    dyn_offset: int | None = None
+    dyn_size: int = 0
+
+    for (
+        p_type,
+        p_offset,
+        p_vaddr,
+        p_addr,
+        p_filesz,
+        p_memsz,
+        p_flags,
+        p_align,
+    ) in _iter_program_headers(elf_bytes, phoff, phentsize, phnum):
+        if p_type == PT_DYNAMIC:
+            dyn_offset = p_offset
+            dyn_size = p_filesz
+            break
+
+    if dyn_offset is None:
+        return  # No dynamic section
+
+    # Parse dynamic section to find RELA info
+    rela_addr: int = 0
+    rela_size: int = 0
+    rela_entsize: int = 12  # Default for 32-bit ELF
+
+    dyn_struct = struct.Struct(">II")  # d_tag, d_val (32-bit)
+    for i in range(0, dyn_size, 8):
+        if dyn_offset + i + 8 > len(elf_bytes):
+            break
+        d_tag, d_val = dyn_struct.unpack_from(elf_bytes, dyn_offset + i)
+        if d_tag == DT_NULL:
+            break
+        elif d_tag == DT_RELA:
+            rela_addr = d_val
+        elif d_tag == DT_RELASZ:
+            rela_size = d_val
+        elif d_tag == DT_RELAENT:
+            rela_entsize = d_val
+
+    if rela_addr == 0 or rela_size == 0:
+        return  # No relocations
+
+    # Find the file offset for rela_addr (which is a virtual address)
+    rela_file_offset: int | None = None
+    for (
+        p_type,
+        p_offset,
+        p_vaddr,
+        p_addr,
+        p_filesz,
+        p_memsz,
+        p_flags,
+        p_align,
+    ) in _iter_program_headers(elf_bytes, phoff, phentsize, phnum):
+        if p_type == PT_LOAD:
+            if p_vaddr <= rela_addr < p_vaddr + p_filesz:
+                rela_file_offset = p_offset + (rela_addr - p_vaddr)
+                break
+
+    if rela_file_offset is None:
+        return  # Can't find relocation section
+
+    # Process relocations
+    rela_struct = struct.Struct(">IIi")  # r_offset, r_info, r_addend
+    num_relas = rela_size // rela_entsize
+
+    for i in range(num_relas):
+        offset = rela_file_offset + i * rela_entsize
+        if offset + 12 > len(elf_bytes):
+            break
+        r_offset, r_info, r_addend = rela_struct.unpack_from(elf_bytes, offset)
+
+        r_type = r_info & 0xff
+
+        if r_type == R_SPARC_RELATIVE:
+            # R_SPARC_RELATIVE: word32 = B + A
+            # B = base address, A = addend
+            target_addr = base_addr + r_offset
+            new_value = (base_addr + r_addend) & 0xFFFFFFFF
+            try:
+                memory.write(target_addr, struct.pack(">I", new_value))
+            except MemoryError:
+                pass  # Skip if address not mapped
+
+
 def load_elf_info(
     memory: SystemMemory, elf_bytes: bytes, base_addr: int = 0
 ) -> ElfInfo:
@@ -208,6 +314,10 @@ def load_elf_info(
         file_slice = elf_bytes[p_offset : p_offset + p_filesz]
         segment.buffer[: len(file_slice)] = file_slice
         # Remaining space already zero-initialised.
+
+    # Process relocations (important for PIE/shared objects like ld-uClibc.so.0)
+    if e_type == ET_DYN and base_addr != 0:
+        _process_relocations(memory, elf_bytes, base_addr, phoff, phentsize, phnum)
 
     # Calculate phdr_addr: use PT_PHDR vaddr, or fall back to calculating it
     if phdr_vaddr:

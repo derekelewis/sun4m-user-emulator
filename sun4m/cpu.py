@@ -229,6 +229,8 @@ class CpuState:
         self.brk: int = 0
         # File descriptor table for file I/O syscalls
         self.fd_table: FileDescriptorTable = FileDescriptorTable(sysroot=sysroot)
+        # Path to the executable (for /proc/self/exe emulation)
+        self.exe_path: str = ""
 
     def step(self):
         """

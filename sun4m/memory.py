@@ -123,6 +123,7 @@ class SystemMemory:
         size: int,
         permissions: int = PROT_READ | PROT_WRITE,
         name: str = "",
+        fixed: bool = False,
     ) -> MemorySegment | None:
         """Allocate memory at a specific address.
 
@@ -131,6 +132,7 @@ class SystemMemory:
             size: Size in bytes (will be page-aligned)
             permissions: Memory protection flags
             name: Optional name for debugging
+            fixed: If True, unmap any overlapping segments first (like MAP_FIXED)
 
         Returns:
             The allocated segment, or None if allocation failed
@@ -146,13 +148,82 @@ class SystemMemory:
         else:
             addr = self._align_down(addr)
             if not self._region_is_free(addr, size):
-                return None
+                if fixed:
+                    # MAP_FIXED: remove overlapping segments first
+                    self._remove_overlapping(addr, size)
+                else:
+                    return None
 
         segment = self.add_segment(addr, size, permissions, name)
         if segment and addr >= MMAP_BASE and addr < MMAP_END:
             # Update _mmap_next to after this allocation
             self._mmap_next = max(self._mmap_next, addr + size)
         return segment
+
+    def _remove_overlapping(self, addr: int, size: int) -> None:
+        """Remove or split segments that overlap with the given range.
+
+        This handles the MAP_FIXED behavior where existing mappings are replaced.
+        """
+        end = addr + size
+        to_remove = []
+        to_add: list[tuple[int, int, MemorySegment]] = []
+
+        for start, seg in list(self._segments.items()):
+            # Check for overlap
+            if addr < seg.end and end > seg.start:
+                # Determine overlap type
+                if seg.start >= addr and seg.end <= end:
+                    # Segment completely within range - remove it
+                    to_remove.append(start)
+                elif seg.start < addr and seg.end > end:
+                    # Range is completely within segment - split it
+                    to_remove.append(start)
+                    # Create left fragment
+                    left_size = addr - seg.start
+                    left_seg = MemorySegment(
+                        seg.start, left_size, seg.permissions, seg.name
+                    )
+                    left_seg.buffer[:] = seg.buffer[:left_size]
+                    to_add.append((seg.start, left_size, left_seg))
+                    # Create right fragment
+                    right_start = end
+                    right_size = seg.end - end
+                    right_seg = MemorySegment(
+                        right_start, right_size, seg.permissions, seg.name
+                    )
+                    right_offset = end - seg.start
+                    right_seg.buffer[:] = seg.buffer[right_offset : right_offset + right_size]
+                    to_add.append((right_start, right_size, right_seg))
+                elif seg.start < addr:
+                    # Segment extends before range - truncate end
+                    to_remove.append(start)
+                    new_size = addr - seg.start
+                    new_seg = MemorySegment(
+                        seg.start, new_size, seg.permissions, seg.name
+                    )
+                    new_seg.buffer[:] = seg.buffer[:new_size]
+                    to_add.append((seg.start, new_size, new_seg))
+                else:
+                    # Segment extends after range - truncate start
+                    to_remove.append(start)
+                    new_start = end
+                    new_size = seg.end - end
+                    new_seg = MemorySegment(
+                        new_start, new_size, seg.permissions, seg.name
+                    )
+                    old_offset = end - seg.start
+                    new_seg.buffer[:] = seg.buffer[old_offset : old_offset + new_size]
+                    to_add.append((new_start, new_size, new_seg))
+
+        # Apply changes
+        for start in to_remove:
+            del self._segments[start]
+        for start, _, seg in to_add:
+            self._segments[start] = seg
+
+        if to_remove or to_add:
+            self.segment_for_addr.cache_clear()
 
     def remove_segment_range(self, addr: int, size: int) -> bool:
         """Remove/unmap a memory region.

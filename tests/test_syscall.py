@@ -167,7 +167,7 @@ class TestSyscallIoctl(unittest.TestCase):
 
 
 class TestSyscallGetrandom(unittest.TestCase):
-    """Tests for getrandom syscall (syscall 360)."""
+    """Tests for getrandom syscall (syscall 347 on SPARC)."""
 
     def setUp(self):
         self.cpu_state = CpuState()
@@ -176,7 +176,7 @@ class TestSyscallGetrandom(unittest.TestCase):
 
     def test_getrandom_fills_buffer(self):
         """Test getrandom fills buffer with random bytes."""
-        self.cpu_state.registers.write_register(1, 360)  # syscall number
+        self.cpu_state.registers.write_register(1, 347)  # syscall number
         self.cpu_state.registers.write_register(8, 0x1000)  # buffer
         self.cpu_state.registers.write_register(9, 16)  # count
         self.cpu_state.registers.write_register(10, 0)  # flags
@@ -193,7 +193,7 @@ class TestSyscallGetrandom(unittest.TestCase):
 
     def test_getrandom_null_pointer(self):
         """Test getrandom with null pointer returns 0."""
-        self.cpu_state.registers.write_register(1, 360)
+        self.cpu_state.registers.write_register(1, 347)
         self.cpu_state.registers.write_register(8, 0)  # NULL buffer
         self.cpu_state.registers.write_register(9, 16)
         self.cpu_state.registers.write_register(10, 0)
@@ -205,7 +205,7 @@ class TestSyscallGetrandom(unittest.TestCase):
 
     def test_getrandom_zero_count(self):
         """Test getrandom with zero count returns 0."""
-        self.cpu_state.registers.write_register(1, 360)
+        self.cpu_state.registers.write_register(1, 347)
         self.cpu_state.registers.write_register(8, 0x1000)
         self.cpu_state.registers.write_register(9, 0)  # zero count
         self.cpu_state.registers.write_register(10, 0)
