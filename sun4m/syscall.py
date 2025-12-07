@@ -452,8 +452,8 @@ class Syscall:
           c_cflag: 4 bytes
           c_lflag: 4 bytes
           c_line:  1 byte
-          c_cc:    19 bytes (NCCS=19 on SPARC)
-          padding: 4 bytes (to align to 36)
+          c_cc:    17 bytes (NCCS=17 on SPARC)
+          padding: 2 bytes (to align to 36)
         """
         iflag, oflag, cflag, lflag, ispeed, ospeed, cc = attrs
         buf = bytearray(36)
