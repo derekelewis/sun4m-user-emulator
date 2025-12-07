@@ -58,8 +58,9 @@ class TestSyscallRead(unittest.TestCase):
 
         self.syscall.handle()
 
-        # Should return -1 (0xFFFFFFFF)
-        self.assertEqual(self.cpu_state.registers.read_register(8), 0xFFFFFFFF)
+        # Should return EBADF (9) with carry set
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)
+        self.assertTrue(self.cpu_state.icc.c)
 
 
 class TestSyscallClose(unittest.TestCase):
@@ -141,7 +142,7 @@ class TestSyscallIoctl(unittest.TestCase):
         self.syscall = Syscall(self.cpu_state)
 
     def test_ioctl_returns_enotty(self):
-        """Test ioctl returns -ENOTTY for terminal queries."""
+        """Test ioctl returns ENOTTY for non-tty file descriptors."""
         self.cpu_state.registers.write_register(1, 54)  # syscall number
         self.cpu_state.registers.write_register(8, 1)  # fd = 1 (stdout)
         self.cpu_state.registers.write_register(9, 0x5401)  # TIOCGWINSZ
@@ -149,9 +150,9 @@ class TestSyscallIoctl(unittest.TestCase):
 
         self.syscall.handle()
 
-        # Should return -ENOTTY (25 on SPARC) as unsigned 32-bit
-        expected = (-25) & 0xFFFFFFFF
-        self.assertEqual(self.cpu_state.registers.read_register(8), expected)
+        # In test context, stdout is not a tty, so should return ENOTTY (25) with carry set
+        self.assertEqual(self.cpu_state.registers.read_register(8), 25)
+        self.assertTrue(self.cpu_state.icc.c)
 
 
 class TestSyscallGetrandom(unittest.TestCase):

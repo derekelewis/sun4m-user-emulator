@@ -15,6 +15,16 @@ class Syscall:
     def __init__(self, cpu_state: CpuState):
         self.cpu_state = cpu_state
 
+    def _return_success(self, value: int) -> None:
+        """Return success from syscall: clear carry, set %o0 to value."""
+        self.cpu_state.registers.write_register(8, value & 0xFFFFFFFF)
+        self.cpu_state.icc.c = False
+
+    def _return_error(self, errno: int) -> None:
+        """Return error from syscall: set carry, set %o0 to positive errno."""
+        self.cpu_state.registers.write_register(8, errno & 0xFFFFFFFF)
+        self.cpu_state.icc.c = True
+
     def handle(self):
         # Get syscall number from %g1
         syscall_number: int = self.cpu_state.registers.read_register(1)
@@ -56,7 +66,8 @@ class Syscall:
           %o1 (reg 9) = buffer pointer
           %o2 (reg 10) = count
         Returns:
-          %o0 = number of bytes read (or -1 on error)
+          %o0 = number of bytes read, carry clear on success
+          %o0 = errno, carry set on error
         """
         fd = self.cpu_state.registers.read_register(8)
         buf_ptr = self.cpu_state.registers.read_register(9)
@@ -66,12 +77,10 @@ class Syscall:
             data = sys.stdin.buffer.read(count)
             if data:
                 self.cpu_state.memory.write(buf_ptr, data)
-                self.cpu_state.registers.write_register(8, len(data))
-            else:
-                self.cpu_state.registers.write_register(8, 0)  # EOF
+            self._return_success(len(data))
         else:
-            # Unsupported fd
-            self.cpu_state.registers.write_register(8, 0xFFFFFFFF)  # -1
+            # Unsupported fd - EBADF (9)
+            self._return_error(9)
 
     def _syscall_close(self):
         """
@@ -79,10 +88,10 @@ class Syscall:
         Arguments:
           %o0 (reg 8) = file descriptor
         Returns:
-          %o0 = 0 on success, -1 on error
+          %o0 = 0, carry clear on success
         """
         # Just return success for now
-        self.cpu_state.registers.write_register(8, 0)
+        self._return_success(0)
 
     def _syscall_write(self):
         """
@@ -92,9 +101,9 @@ class Syscall:
           %o1 (reg 9) = buffer pointer
           %o2 (reg 10) = length
         Returns:
-          %o0 = number of bytes written (or -1 on error)
+          %o0 = number of bytes written, carry clear on success
+          %o0 = errno, carry set on error
         """
-
         fd = self.cpu_state.registers.read_register(8)
         buf_ptr = self.cpu_state.registers.read_register(9)
         length = self.cpu_state.registers.read_register(10)
@@ -104,14 +113,14 @@ class Syscall:
         if fd == 1:  # STDOUT
             sys.stdout.buffer.write(data)
             sys.stdout.buffer.flush()
-            self.cpu_state.registers.write_register(8, length)
+            self._return_success(length)
         elif fd == 2:  # STDERR
             sys.stderr.buffer.write(data)
             sys.stderr.buffer.flush()
-            self.cpu_state.registers.write_register(8, length)
+            self._return_success(length)
         else:
-            # Unsupported fd
-            self.cpu_state.registers.write_register(8, 0xFFFFFFFF)  # write -1 (error)
+            # Unsupported fd - EBADF (9)
+            self._return_error(9)
 
     def _syscall_brk(self):
         """
@@ -119,7 +128,7 @@ class Syscall:
         Arguments:
           %o0 (reg 8) = new break address (0 = query current)
         Returns:
-          %o0 = current break address on success, -1 on error
+          %o0 = current break address, carry clear on success
         """
         new_brk = self.cpu_state.registers.read_register(8)
 
@@ -132,17 +141,16 @@ class Syscall:
 
         if new_brk == 0:
             # Query current break
-            self.cpu_state.registers.write_register(8, Syscall._brk)
+            self._return_success(Syscall._brk)
         elif new_brk > Syscall._brk:
             # Extend the heap - for simplicity, we just update the break
             # In a real implementation, we'd need to extend the memory segment
-            old_brk = Syscall._brk
             Syscall._brk = new_brk
-            self.cpu_state.registers.write_register(8, Syscall._brk)
+            self._return_success(Syscall._brk)
         else:
             # Shrink or same - just update and return
             Syscall._brk = new_brk
-            self.cpu_state.registers.write_register(8, Syscall._brk)
+            self._return_success(Syscall._brk)
 
     def _syscall_ioctl(self):
         """
@@ -152,19 +160,19 @@ class Syscall:
           %o1 (reg 9) = request code
           %o2 (reg 10) = argument
         Returns:
-          %o0 = 0 on success, -errno on error
+          %o0 = 0, carry clear on success
+          %o0 = errno, carry set on error
         """
         fd = self.cpu_state.registers.read_register(8)
-        request = self.cpu_state.registers.read_register(9)
 
         # Check if fd maps to a real host terminal
         if fd in (0, 1, 2) and os.isatty(fd):
             # For terminal ioctls, return 0 (success) to indicate it's a tty
             # This makes programs like gzip behave correctly when run interactively
-            self.cpu_state.registers.write_register(8, 0)
+            self._return_success(0)
         else:
-            # Not a tty - return -ENOTTY (25 on SPARC)
-            self.cpu_state.registers.write_register(8, (-25) & 0xFFFFFFFF)
+            # Not a tty - ENOTTY (25 on SPARC)
+            self._return_error(25)
 
     def _syscall_getrandom(self):
         """
@@ -174,15 +182,16 @@ class Syscall:
           %o1 (reg 9) = count
           %o2 (reg 10) = flags
         Returns:
-          %o0 = number of bytes written, or -errno on error
+          %o0 = number of bytes written, carry clear on success
+          %o0 = errno, carry set on error
         """
         buf_ptr = self.cpu_state.registers.read_register(8)
         count = self.cpu_state.registers.read_register(9)
         if buf_ptr == 0 or count == 0:
             # NULL pointer or zero count - return 0
-            self.cpu_state.registers.write_register(8, 0)
+            self._return_success(0)
             return
         # Generate random bytes
         random_bytes = os.urandom(count)
         self.cpu_state.memory.write(buf_ptr, random_bytes)
-        self.cpu_state.registers.write_register(8, count)
+        self._return_success(count)
