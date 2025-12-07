@@ -32,6 +32,15 @@
 - For PRs, include: brief summary of behavior change, tests run (`python -m unittest`, `make -C bin all` if touched), and any TODO follow-ups. Link issues when applicable; screenshots are unnecessary unless documenting CLI output.
 - Keep changes focused; split emulator core updates from sample binary or docs edits.
 
+## Dynamic Library Testing
+- `bin/gzip_dynamic` is a dynamically linked SPARC binary built against uClibc.
+- Dependencies: `libc.so.0` and `/lib/ld-uClibc.so.0` (the uClibc dynamic linker).
+- Use QEMU as a reference implementation for testing behavior:
+  ```
+  QEMU_LD_PREFIX=~/work/repos/third-party/buildroot/output/target qemu-sparc ./bin/gzip_dynamic
+  ```
+  Set `QEMU_LD_PREFIX` to a buildroot `output/target` directory containing the uClibc libraries.
+
 ## Architecture Overview
 - `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
 - `register.py` models register windows; `syscall.py` implements trap-based syscalls (write, exit).

@@ -4,9 +4,15 @@ from .machine import Machine
 
 parser = argparse.ArgumentParser(description="SPARC V8 user-mode emulator")
 parser.add_argument(
-    "--steps", type=int, default=10000, help="number of cycles/steps to execute"
+    "--steps", type=int, default=None, help="maximum number of cycles/steps to execute"
 )
 parser.add_argument("--trace", action="store_true", help="enable tracing")
+parser.add_argument(
+    "--sysroot",
+    type=str,
+    default="",
+    help="path prefix for guest filesystem (e.g., buildroot output/target)",
+)
 parser.add_argument("file", help="ELF binary to execute")
 parser.add_argument(
     "program_args",
@@ -17,10 +23,10 @@ args = parser.parse_args()
 
 
 def main() -> None:
-    machine: Machine = Machine(trace=args.trace)
+    machine: Machine = Machine(trace=args.trace, sysroot=args.sysroot)
     argv = [args.file] + args.program_args
     machine.load_file(args.file, argv=argv)
-    # Run a bounded number of steps; the sample exits via syscall.
+    # Run until program exits or step limit reached
     machine.cpu.run(max_steps=args.steps)
 
 
