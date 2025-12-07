@@ -1,4 +1,6 @@
 # Memory protection flags (matching Linux)
+from functools import lru_cache
+
 PROT_NONE = 0x0
 PROT_READ = 0x1
 PROT_WRITE = 0x2
@@ -14,8 +16,6 @@ MMAP_END = 0x80000000
 
 class MemorySegment:
     """Represents a virtual address space segment of contiguous memory"""
-
-    __slots__ = ("start", "end", "buffer", "permissions", "name")
 
     def __init__(
         self,
@@ -34,14 +34,10 @@ class MemorySegment:
 class SystemMemory:
     """Represents address space"""
 
-    __slots__ = ("_segments", "_mmap_next", "_last_segment")
-
     def __init__(self):
         self._segments: dict[int, MemorySegment] = dict()
         # Track next free address in mmap region for anonymous mappings
         self._mmap_next: int = MMAP_BASE
-        # Cache for last accessed segment (most accesses hit same segment)
-        self._last_segment: MemorySegment | None = None
 
     def add_segment(
         self,
@@ -56,7 +52,7 @@ class SystemMemory:
             segment = MemorySegment(start, size, permissions, name)
             self._segments[start] = segment
             # Invalidate cache since address mappings changed
-            self._last_segment = None
+            self.segment_for_addr.cache_clear()
             return segment
         else:
             return None
@@ -227,7 +223,7 @@ class SystemMemory:
             self._segments[start] = seg
 
         if to_remove or to_add:
-            self._last_segment = None
+            self.segment_for_addr.cache_clear()
 
     def remove_segment_range(self, addr: int, size: int) -> bool:
         """Remove/unmap a memory region.
@@ -248,7 +244,7 @@ class SystemMemory:
             del self._segments[start]
 
         if to_remove:
-            self._last_segment = None
+            self.segment_for_addr.cache_clear()
             return True
         return False
 
@@ -263,27 +259,16 @@ class SystemMemory:
             return True
         return False
 
+    @lru_cache(maxsize=64)
     def segment_for_addr(self, addr: int) -> MemorySegment | None:
         """Retrieve segment given an address"""
-        # Fast path: check last accessed segment first (locality optimization)
-        seg = self._last_segment
-        if seg is not None and seg.start <= addr < seg.end:
-            return seg
-        # Linear search through segments
         for segment in self._segments.values():
             if segment.start <= addr < segment.end:
-                self._last_segment = segment
                 return segment
         return None
 
     def read(self, addr: int, size: int) -> bytes:
         """Read bytes from memory"""
-        # Inline fast path: check last segment first
-        seg = self._last_segment
-        if seg is not None and seg.start <= addr and (addr + size) <= seg.end:
-            offset = addr - seg.start
-            return seg.buffer[offset : offset + size]
-        # Slow path: find segment
         segment = self.segment_for_addr(addr)
         if segment and segment.start <= (addr + size) <= segment.end:
             offset = addr - segment.start
@@ -292,15 +277,8 @@ class SystemMemory:
 
     def write(self, addr: int, input: bytes) -> None:
         """Write bytes to memory"""
-        # Inline fast path: check last segment first
-        seg = self._last_segment
-        size = len(input)
-        if seg is not None and seg.start <= addr and (addr + size) <= seg.end:
-            offset = addr - seg.start
-            seg.buffer[offset : offset + size] = input
-            return
-        # Slow path: find segment
         segment = self.segment_for_addr(addr)
+        size = len(input)
         if segment and segment.start <= (addr + size) <= segment.end:
             offset = addr - segment.start
             segment.buffer[offset : offset + size] = input

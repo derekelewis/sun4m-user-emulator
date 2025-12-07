@@ -252,8 +252,6 @@ class FileDescriptorTable:
 class ICC:
     """Integer Condition Codes (N, Z, V, C)."""
 
-    __slots__ = ("n", "z", "v", "c")
-
     def __init__(self):
         self.n: bool = False  # Negative
         self.z: bool = False  # Zero
@@ -299,11 +297,6 @@ class ICC:
 
 class CpuState:
     """Represents the architectural state of the emulated CPU."""
-
-    __slots__ = (
-        "trace", "pc", "npc", "psr", "y", "icc", "registers", "memory",
-        "annul_next", "brk", "fd_table", "exe_path", "halted", "exit_code"
-    )
 
     def __init__(
         self,

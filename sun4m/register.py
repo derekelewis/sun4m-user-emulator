@@ -1,6 +1,4 @@
 class Window:
-    __slots__ = ("i", "l")
-
     def __init__(self):
         self.i = [0] * 8
         self.l = [0] * 8
@@ -14,8 +12,6 @@ class RegisterFile:
     traps. With 64 windows, deeply nested call chains won't exhaust the
     window pool, eliminating the need to spill/fill registers to/from memory.
     """
-
-    __slots__ = ("n_windows", "windows", "g", "cwp")
 
     def __init__(self, n_windows: int = 64):
         self.n_windows: int = n_windows
