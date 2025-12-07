@@ -28,6 +28,8 @@ class RegisterFile:
             raise ValueError("invalid register")
 
     def write_register(self, register: int, value: int) -> None:
+        # Mask to 32 bits to handle negative values from sign extension
+        value = value & 0xFFFFFFFF
         if register < 8:  # globals
             if register == 0:  # g[0] must always be 0
                 return

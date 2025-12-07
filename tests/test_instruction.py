@@ -39,7 +39,7 @@ class TestInstruction(unittest.TestCase):
         cpu_state: CpuState = CpuState()
         save_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.registers.cwp, 7)
-        self.assertEqual(cpu_state.registers.read_register(14), -96)
+        self.assertEqual(cpu_state.registers.read_register(14), (-96) & 0xFFFFFFFF)
 
     # TODO: need test_save_instruction_rs2_execute
     def test_save_instruction_rs2_execute(self): ...
@@ -157,7 +157,7 @@ class TestInstruction(unittest.TestCase):
         cpu_state: CpuState = CpuState()
         with self.assertRaises(ValueError) as e:
             ta_instruction.execute(cpu_state)
-        self.assertEqual(str(e.exception), "syscall not implemented")
+        self.assertEqual(str(e.exception), "syscall 0 not implemented")
 
     # TODO: need test_ta_instruction_rs2_execute
     def test_ta_instruction_rs2_execute(self): ...
@@ -488,9 +488,9 @@ class TestInstruction(unittest.TestCase):
     def test_icc_carry_subtraction(self):
         from sun4m.cpu import ICC
         icc = ICC()
-        # 10 - 5 = 5, no borrow so C=1 (in SPARC, C=1 means no borrow)
+        # 10 - 5 = 5, no borrow so C=0 (in SPARC, C=1 means borrow)
         icc.update(5, 10, 5, is_sub=True)
-        self.assertTrue(icc.c)
-        # 5 - 10 = -5 (unsigned wraparound), borrow so C=0
-        icc.update(0xFFFFFFFB, 5, 10, is_sub=True)
         self.assertFalse(icc.c)
+        # 5 - 10 = -5 (unsigned wraparound), borrow so C=1
+        icc.update(0xFFFFFFFB, 5, 10, is_sub=True)
+        self.assertTrue(icc.c)

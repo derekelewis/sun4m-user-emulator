@@ -136,12 +136,17 @@ class TrapInstruction(Instruction):
                 + cpu_state.registers.read_register(self.rs2)
             ) % 128
 
-        if trap_num == 0x10:  # Software interrupt 0x10 - syscall trap
+        if trap_num == 0x03:  # Flush Windows trap
+            # This trap flushes register windows to the stack.
+            # For user mode with sufficient windows, we just return.
+            # A full implementation would spill windows to memory.
+            pass
+        elif trap_num == 0x10:  # Software interrupt 0x10 - syscall trap
             if self.cond == 0b1000:  # TA (Trap Always)
                 syscall_handler: Syscall = Syscall(cpu_state)
                 syscall_handler.handle()
         else:
-            raise ValueError("unimplemented trap number")
+            raise ValueError(f"unimplemented trap number: {trap_num:#x}")
 
     def __str__(self) -> str:
         inst_string: str = (
@@ -186,35 +191,87 @@ class Format3Instruction(Instruction):
             self._execute_arithmetic(cpu_state)
 
     def _execute_load_store(self, cpu_state: CpuState) -> None:
+        # Compute effective address: rs1 + (simm13 or rs2)
+        rs1_val = cpu_state.registers.read_register(self.rs1)
+        if self.i:
+            memory_address = (rs1_val + self.simm13) & 0xFFFFFFFF
+        else:
+            rs2_val = cpu_state.registers.read_register(self.rs2)
+            memory_address = (rs1_val + rs2_val) & 0xFFFFFFFF
+
         match self.op3:
-            case 0b000000:  # LD instruction
-                if self.i:
-                    memory_address = (
-                        cpu_state.registers.read_register(self.rs1) + self.simm13
-                    ) & 0xFFFFFFFF
-                    # TODO: raise exception on unaligned memory access
-                    load_word = cpu_state.memory.read(memory_address, 4)
-                    cpu_state.registers.write_register(
-                        self.rd, int.from_bytes(load_word, "big")
-                    )
-                else:
-                    # supervisor only
-                    raise ValueError("not implemented")
-            case 0b000100:  # ST instruction
-                if self.i:
-                    memory_address = (
-                        cpu_state.registers.read_register(self.rs1) + self.simm13
-                    ) & 0xFFFFFFFF
-                    store_word = cpu_state.registers.read_register(self.rd)
-                    # TODO: raise exception on unaligned memory access
-                    cpu_state.memory.write(
-                        memory_address, store_word.to_bytes(4, byteorder="big")
-                    )
-                else:
-                    # supervisor only
-                    raise ValueError("not implemented")
+            case 0b000000:  # LD (load word)
+                # TODO: raise exception on unaligned memory access
+                load_word = cpu_state.memory.read(memory_address, 4)
+                cpu_state.registers.write_register(
+                    self.rd, int.from_bytes(load_word, "big")
+                )
+            case 0b000001:  # LDUB (load unsigned byte)
+                load_byte = cpu_state.memory.read(memory_address, 1)
+                cpu_state.registers.write_register(self.rd, load_byte[0])
+            case 0b001001:  # LDSB (load signed byte)
+                load_byte = cpu_state.memory.read(memory_address, 1)
+                value = load_byte[0]
+                if value & 0x80:  # sign extend
+                    value |= 0xFFFFFF00
+                cpu_state.registers.write_register(self.rd, value)
+            case 0b000010:  # LDUH (load unsigned halfword)
+                load_half = cpu_state.memory.read(memory_address, 2)
+                cpu_state.registers.write_register(
+                    self.rd, int.from_bytes(load_half, "big")
+                )
+            case 0b001010:  # LDSH (load signed halfword)
+                load_half = cpu_state.memory.read(memory_address, 2)
+                value = int.from_bytes(load_half, "big")
+                if value & 0x8000:  # sign extend
+                    value |= 0xFFFF0000
+                cpu_state.registers.write_register(self.rd, value)
+            case 0b000011:  # LDD (load doubleword)
+                # Load 8 bytes into rd and rd+1
+                load_high = cpu_state.memory.read(memory_address, 4)
+                load_low = cpu_state.memory.read(memory_address + 4, 4)
+                cpu_state.registers.write_register(
+                    self.rd, int.from_bytes(load_high, "big")
+                )
+                cpu_state.registers.write_register(
+                    self.rd + 1, int.from_bytes(load_low, "big")
+                )
+            case 0b000100:  # ST (store word)
+                # TODO: raise exception on unaligned memory access
+                store_word = cpu_state.registers.read_register(self.rd) & 0xFFFFFFFF
+                cpu_state.memory.write(
+                    memory_address, store_word.to_bytes(4, byteorder="big")
+                )
+            case 0b000101:  # STB (store byte)
+                store_val = cpu_state.registers.read_register(self.rd) & 0xFF
+                cpu_state.memory.write(memory_address, bytes([store_val]))
+            case 0b000110:  # STH (store halfword)
+                store_val = cpu_state.registers.read_register(self.rd) & 0xFFFF
+                cpu_state.memory.write(
+                    memory_address, store_val.to_bytes(2, byteorder="big")
+                )
+            case 0b000111:  # STD (store doubleword)
+                # Store from rd and rd+1 to memory
+                high_word = cpu_state.registers.read_register(self.rd) & 0xFFFFFFFF
+                low_word = cpu_state.registers.read_register(self.rd + 1) & 0xFFFFFFFF
+                cpu_state.memory.write(
+                    memory_address, high_word.to_bytes(4, byteorder="big")
+                )
+                cpu_state.memory.write(
+                    memory_address + 4, low_word.to_bytes(4, byteorder="big")
+                )
+            case 0b111111:  # SWAP (atomic swap)
+                # Load word from memory, store rd to memory
+                old_value = cpu_state.memory.read(memory_address, 4)
+                new_value = cpu_state.registers.read_register(self.rd) & 0xFFFFFFFF
+                cpu_state.memory.write(
+                    memory_address, new_value.to_bytes(4, byteorder="big")
+                )
+                cpu_state.registers.write_register(
+                    self.rd, int.from_bytes(old_value, "big")
+                )
             case _:
-                raise ValueError("unimplemented load/store opcode")
+                raise ValueError(f"unimplemented load/store opcode: {self.op3:#08b}")
 
     def _execute_arithmetic(self, cpu_state: CpuState) -> None:
         match self.op3:
@@ -240,10 +297,78 @@ class Format3Instruction(Instruction):
                 result = (op1 - op2) & 0xFFFFFFFF
                 cpu_state.registers.write_register(self.rd, result)
                 cpu_state.icc.update(result, op1, op2, is_sub=True)
+            case 0b100001:  # TSUBcc (Tagged Subtract with CC)
+                # Simplified: treat like SUBCC, ignoring tag overflow
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = (op1 - op2) & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+                cpu_state.icc.update(result, op1, op2, is_sub=True)
+            case 0b001000:  # ADDX instruction (Add with Carry)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                carry = 1 if cpu_state.icc.c else 0
+                result = (op1 + op2 + carry) & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b001100:  # SUBX instruction (Subtract with Carry)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                # C=1 means there was a borrow from previous subtraction
+                borrow = 1 if cpu_state.icc.c else 0
+                result = (op1 - op2 - borrow) & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b000001:  # AND instruction
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 & op2
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b010001:  # ANDCC instruction
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 & op2
+                cpu_state.registers.write_register(self.rd, result)
+                cpu_state.icc.update(result, op1, op2, is_sub=False)
+            case 0b000101:  # ANDN instruction (AND NOT)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 & (~op2 & 0xFFFFFFFF)
+                cpu_state.registers.write_register(self.rd, result)
             case 0b000010:  # OR instruction
                 op1 = cpu_state.registers.read_register(self.rs1)
                 op2 = self._get_operand2(cpu_state)
                 result = op1 | op2
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b010010:  # ORCC instruction
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 | op2
+                cpu_state.registers.write_register(self.rd, result)
+                cpu_state.icc.update(result, op1, op2, is_sub=False)
+            case 0b000011:  # XOR instruction
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 ^ op2
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b000111:  # XNOR instruction
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = ~(op1 ^ op2) & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b100101:  # SLL instruction (Shift Left Logical)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                if self.i:
+                    shift_count = self.simm13 & 0x1F  # Only lower 5 bits
+                else:
+                    shift_count = cpu_state.registers.read_register(self.rs2) & 0x1F
+                result = (op1 << shift_count) & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b100110:  # SRL instruction (Shift Right Logical)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                if self.i:
+                    shift_count = self.simm13 & 0x1F  # Only lower 5 bits
+                else:
+                    shift_count = cpu_state.registers.read_register(self.rs2) & 0x1F
+                result = op1 >> shift_count
                 cpu_state.registers.write_register(self.rd, result)
             case 0b100111:  # SRA instruction (Shift Right Arithmetic)
                 op1 = cpu_state.registers.read_register(self.rs1)
@@ -259,6 +384,13 @@ class Format3Instruction(Instruction):
                 else:
                     result = op1 >> shift_count
                 result = result & 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, result)
+            case 0b001010:  # UMUL instruction (Unsigned Multiply)
+                op1 = cpu_state.registers.read_register(self.rs1) & 0xFFFFFFFF
+                op2 = self._get_operand2(cpu_state) & 0xFFFFFFFF
+                result64 = op1 * op2
+                cpu_state.y = (result64 >> 32) & 0xFFFFFFFF
+                result = result64 & 0xFFFFFFFF
                 cpu_state.registers.write_register(self.rd, result)
             case 0b001011:  # SMUL instruction (Signed Multiply)
                 op1 = cpu_state.registers.read_register(self.rs1)
@@ -279,6 +411,20 @@ class Format3Instruction(Instruction):
                 cpu_state.y = (result64 >> 32) & 0xFFFFFFFF
                 result = result64 & 0xFFFFFFFF
                 cpu_state.registers.write_register(self.rd, result)
+            case 0b001110:  # UDIV instruction (Unsigned Divide)
+                # Dividend is Y:rs1 (64-bit unsigned), divisor is rs2/simm13
+                y = cpu_state.y
+                rs1_val = cpu_state.registers.read_register(self.rs1)
+                dividend = (y << 32) | rs1_val
+                op2 = self._get_operand2(cpu_state)
+                divisor = op2 & 0xFFFFFFFF
+                if divisor == 0:
+                    raise ValueError("division by zero")
+                quotient = dividend // divisor
+                # Clamp to 32-bit unsigned range
+                if quotient > 0xFFFFFFFF:
+                    quotient = 0xFFFFFFFF
+                cpu_state.registers.write_register(self.rd, quotient)
             case 0b001111:  # SDIV instruction (Signed Divide)
                 # Dividend is Y:rs1 (64-bit), divisor is rs2/simm13
                 y = cpu_state.y

@@ -29,8 +29,8 @@ class ICC:
 
         if is_sub:
             # For subtraction A - B:
-            # C: set if there was NO borrow (i.e., A >= B as unsigned)
-            self.c = (op1 & 0xFFFFFFFF) >= (op2 & 0xFFFFFFFF)
+            # C: set if there WAS a borrow (i.e., A < B as unsigned)
+            self.c = (op1 & 0xFFFFFFFF) < (op2 & 0xFFFFFFFF)
             # V: overflow if signs of operands differ and sign of result
             # differs from sign of first operand
             op1_sign = bool(op1 & 0x80000000)
@@ -84,7 +84,7 @@ class CpuState:
         inst_bytes = self.memory.read(self.pc, 4)
         inst_word = int.from_bytes(inst_bytes, "big")
         if self.trace:
-            print(f"fetch_word: inst: {hex(inst_word)}")
+            print(f"PC={self.pc:#010x} inst: {hex(inst_word)}")
 
         instruction = decode(inst_word)
         instruction.execute(self)
