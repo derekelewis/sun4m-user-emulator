@@ -70,15 +70,27 @@ class TestSyscallClose(unittest.TestCase):
         self.cpu_state = CpuState()
         self.syscall = Syscall(self.cpu_state)
 
-    def test_close_returns_success(self):
-        """Test close syscall returns success."""
+    def test_close_stdin_returns_success(self):
+        """Test close syscall on stdin returns success (no-op for special fds)."""
         self.cpu_state.registers.write_register(1, 6)  # syscall number
-        self.cpu_state.registers.write_register(8, 3)  # fd = 3
+        self.cpu_state.registers.write_register(8, 0)  # fd = 0 (stdin)
 
         self.syscall.handle()
 
-        # Should return 0 (success)
+        # Should return 0 (success) for special fds
         self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)  # carry clear on success
+
+    def test_close_invalid_fd_returns_ebadf(self):
+        """Test close syscall on invalid fd returns EBADF."""
+        self.cpu_state.registers.write_register(1, 6)  # syscall number
+        self.cpu_state.registers.write_register(8, 99)  # fd = 99 (invalid)
+
+        self.syscall.handle()
+
+        # Should return EBADF (9) with carry set
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)
+        self.assertTrue(self.cpu_state.icc.c)  # carry set on error
 
 
 class TestSyscallBrk(unittest.TestCase):
