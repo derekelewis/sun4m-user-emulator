@@ -56,7 +56,7 @@ make -C bin clean all
 |--------|-------------|
 | `--sysroot PATH` | Path prefix for guest filesystem (e.g., buildroot output/target) |
 | `--passthrough PATH` | Host path to access directly, bypassing sysroot (repeatable) |
-| `--steps N` | Maximum number of instructions to execute |
+| `--steps N` | Maximum number of instructions to execute (optional; runs until program exits if omitted) |
 | `--trace` | Enable instruction tracing |
 
 ## Architecture

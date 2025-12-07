@@ -79,6 +79,7 @@
 
 ## Architecture Overview
 - `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
+- `CpuState` includes `halted` and `exit_code` attributes for clean termination; `run()` returns the exit code when the program terminates.
 - `register.py` models register windows; `syscall.py` implements trap-based syscalls (write, exit).
 - Register window overlap: Each `Window` stores only `i` (ins) and `l` (locals)—there is no separate outs array. The SPARC overlap (caller's outs = callee's ins) is achieved by resolving outs at CWP via `windows[cwp - 1].i`. When SAVE decrements CWP, the same physical storage that was "outs" becomes "ins" in the new window. This is correct per SPARC V8 Figure 4-1.
 - New instructions usually require decoder wiring plus an `execute` method that reads/writes through `CpuState` and `SystemMemory`.
