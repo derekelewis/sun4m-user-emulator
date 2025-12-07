@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from .machine import Machine
 
@@ -37,7 +38,8 @@ def main() -> None:
     argv = [args.file] + args.program_args
     machine.load_file(args.file, argv=argv)
     # Run until program exits or step limit reached
-    machine.cpu.run(max_steps=args.steps)
+    exit_code = machine.cpu.run(max_steps=args.steps)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

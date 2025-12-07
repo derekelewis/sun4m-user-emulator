@@ -187,7 +187,8 @@ class Syscall:
           %o0 (reg 8) = exit code
         """
         exit_code = self.cpu_state.registers.read_register(8)
-        sys.exit(exit_code)
+        self.cpu_state.exit_code = exit_code
+        self.cpu_state.halted = True
 
     def _syscall_read(self):
         """

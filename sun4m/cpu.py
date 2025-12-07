@@ -325,6 +325,9 @@ class CpuState:
         )
         # Path to the executable (for /proc/self/exe emulation)
         self.exe_path: str = ""
+        # Termination state
+        self.halted: bool = False
+        self.exit_code: int = 0
 
     def step(self):
         """
@@ -362,12 +365,15 @@ class CpuState:
             self.npc = self.npc & 0xFFFFFFFF
         return instruction
 
-    def run(self, max_steps: int | None = None) -> None:
-        """Run until ``max_steps`` is reached or a syscall terminates."""
+    def run(self, max_steps: int | None = None) -> int:
+        """Run until program exits, max_steps is reached, or CPU halts.
 
+        Returns the exit code if the program terminated via exit syscall.
+        """
         steps = 0
-        while True:
+        while not self.halted:
             if max_steps is not None and steps >= max_steps:
-                return
+                break
             self.step()
             steps += 1
+        return self.exit_code

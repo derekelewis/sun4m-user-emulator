@@ -226,24 +226,24 @@ class TestSyscallExitGroup(unittest.TestCase):
         self.syscall = Syscall(self.cpu_state)
 
     def test_exit_group_exits_with_code(self):
-        """Test exit_group syscall exits with the specified code."""
+        """Test exit_group syscall sets halted flag with the specified code."""
         self.cpu_state.registers.write_register(1, 188)  # syscall number
         self.cpu_state.registers.write_register(8, 42)  # exit code in %o0
 
-        with self.assertRaises(SystemExit) as context:
-            self.syscall.handle()
+        self.syscall.handle()
 
-        self.assertEqual(context.exception.code, 42)
+        self.assertTrue(self.cpu_state.halted)
+        self.assertEqual(self.cpu_state.exit_code, 42)
 
     def test_exit_group_exits_with_zero(self):
-        """Test exit_group syscall exits with code 0."""
+        """Test exit_group syscall sets halted flag with code 0."""
         self.cpu_state.registers.write_register(1, 188)  # syscall number
         self.cpu_state.registers.write_register(8, 0)  # exit code 0
 
-        with self.assertRaises(SystemExit) as context:
-            self.syscall.handle()
+        self.syscall.handle()
 
-        self.assertEqual(context.exception.code, 0)
+        self.assertTrue(self.cpu_state.halted)
+        self.assertEqual(self.cpu_state.exit_code, 0)
 
 
 class TestSyscallUnimplemented(unittest.TestCase):

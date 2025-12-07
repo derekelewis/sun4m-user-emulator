@@ -48,6 +48,8 @@ TODOs
     - [x] Integer Condition Codes (ICC)
     - [x] Testing
 4. Syscalls
+    - Termination:
+        - [x] Clean termination via halted flag and exit_code (--steps now optional)
     - File I/O:
         - [x] open (5), openat (284)
         - [x] read (3), write (4), close (6)
