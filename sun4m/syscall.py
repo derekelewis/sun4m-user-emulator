@@ -400,7 +400,7 @@ class Syscall:
                         logger.warning("termios.tcsetattr failed: %s", e)
                 self._return_success(0)
             elif request == TIOCGWINSZ:
-                # Get window size
+                # Get window size - try host first, then stored size, then default
                 if os.isatty(fd):
                     try:
                         result = fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\x00" * 8)
@@ -413,12 +413,25 @@ class Syscall:
                         return
                     except OSError as e:
                         logger.debug("TIOCGWINSZ ioctl failed: %s", e)
+                # Try stored window size from TIOCSWINSZ
+                if self.cpu_state.window_size is not None:
+                    rows, cols, xpix, ypix = self.cpu_state.window_size
+                    logger.debug("TIOCGWINSZ: using stored size %dx%d", rows, cols)
+                    ws = struct.pack(">HHHH", rows, cols, xpix, ypix)
+                    self.cpu_state.memory.write(arg, ws)
+                    self._return_success(0)
+                    return
                 # Return default size
                 logger.debug("TIOCGWINSZ: using default 24x80")
                 ws = struct.pack(">HHHH", 24, 80, 0, 0)
                 self.cpu_state.memory.write(arg, ws)
                 self._return_success(0)
             elif request == TIOCSWINSZ:
+                # Set window size - store for later TIOCGWINSZ queries
+                ws_data = self.cpu_state.memory.read(arg, 8)
+                rows, cols, xpix, ypix = struct.unpack(">HHHH", ws_data)
+                self.cpu_state.window_size = (rows, cols, xpix, ypix)
+                logger.debug("TIOCSWINSZ: stored size %dx%d", rows, cols)
                 self._return_success(0)
             else:
                 # Unknown ioctl - return success for tty fds
@@ -830,7 +843,7 @@ class Syscall:
 
     def _syscall_poll(self):
         """
-        poll syscall implementation
+        poll syscall implementation using select.poll() for proper semantics.
         Arguments:
           %o0 (reg 8) = fds pointer (array of pollfd structs)
           %o1 (reg 9) = nfds (number of file descriptors)
@@ -856,10 +869,10 @@ class Syscall:
             self._return_success(0)
             return
 
-        # Read pollfd structures (8 bytes each: int fd, short events, short revents)
-        read_fds: list[int] = []
-        write_fds: list[int] = []
-        except_fds: list[int] = []
+        # Create poll object and register file descriptors
+        poll_obj = select.poll()
+        # Map guest fd index to (host_fd, guest_fd) for result lookup
+        fd_map: dict[int, tuple[int, int]] = {}  # host_fd -> (index, guest_fd)
 
         for i in range(nfds):
             pollfd_data = self.cpu_state.memory.read(fds_ptr + i * 8, 8)
@@ -873,25 +886,34 @@ class Syscall:
             if host_fd is None:
                 continue
 
-            if events & (POLLIN | POLLPRI):
-                read_fds.append(host_fd)
+            # Translate events to host poll flags (they're the same on Linux)
+            host_events = 0
+            if events & POLLIN:
+                host_events |= select.POLLIN
+            if events & POLLPRI:
+                host_events |= select.POLLPRI
             if events & POLLOUT:
-                write_fds.append(host_fd)
-            except_fds.append(host_fd)
+                host_events |= select.POLLOUT
 
-        # Convert timeout to seconds for select (None for infinite)
-        if timeout < 0:
-            timeout_sec = None
-        else:
-            timeout_sec = timeout / 1000.0
+            try:
+                poll_obj.register(host_fd, host_events)
+                fd_map[host_fd] = (i, fd)
+            except (OSError, ValueError):
+                # Skip invalid fds, they'll get POLLNVAL
+                pass
 
         try:
-            readable, writable, exceptional = select.select(
-                read_fds, write_fds, except_fds, timeout_sec
-            )
+            # poll() timeout is in milliseconds, -1 for infinite (None)
+            poll_timeout = timeout if timeout >= 0 else None
+            results = poll_obj.poll(poll_timeout)
         except (OSError, ValueError):
             self._return_error(EBADF)
             return
+
+        # Build revents map from poll results
+        revents_map: dict[int, int] = {}  # host_fd -> revents
+        for host_fd, revents in results:
+            revents_map[host_fd] = revents
 
         # Write revents back to pollfd structures
         count = 0
@@ -904,7 +926,6 @@ class Syscall:
                 self.cpu_state.memory.write(fds_ptr + i * 8 + 6, struct.pack(">h", 0))
                 continue
 
-            # Find the host fd for this guest fd
             host_fd = self._get_host_fd(fd)
             if host_fd is None:
                 # Invalid fd - set POLLNVAL
@@ -914,13 +935,23 @@ class Syscall:
                 count += 1
                 continue
 
+            # Get revents from poll results
             revents = 0
-            if host_fd in readable:
-                revents |= POLLIN
-            if host_fd in writable:
-                revents |= POLLOUT
-            if host_fd in exceptional:
-                revents |= POLLERR
+            if host_fd in revents_map:
+                host_revents = revents_map[host_fd]
+                # Translate host revents back (same values on Linux)
+                if host_revents & select.POLLIN:
+                    revents |= POLLIN
+                if host_revents & select.POLLPRI:
+                    revents |= POLLPRI
+                if host_revents & select.POLLOUT:
+                    revents |= POLLOUT
+                if host_revents & select.POLLERR:
+                    revents |= POLLERR
+                if host_revents & select.POLLHUP:
+                    revents |= POLLHUP
+                if host_revents & select.POLLNVAL:
+                    revents |= POLLNVAL
 
             if revents != 0:
                 count += 1

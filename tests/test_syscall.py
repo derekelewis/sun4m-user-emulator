@@ -1686,6 +1686,28 @@ class TestSyscallTerminalIoctl(unittest.TestCase):
         self.assertEqual(self.cpu_state.registers.read_register(8), 0)
         self.assertFalse(self.cpu_state.icc.c)
 
+    def test_tiocswinsz_stores_size_for_tiocgwinsz(self):
+        """Test TIOCSWINSZ stores window size that TIOCGWINSZ returns."""
+        import struct
+        TIOCSWINSZ = 0x80087467
+        TIOCGWINSZ = 0x40087468
+
+        # First, set a custom window size via TIOCSWINSZ
+        winsize = struct.pack(">HHHH", 50, 120, 800, 600)
+        self.cpu_state.memory.write(0x1000, winsize)
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCSWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Now verify window_size is stored in cpu_state
+        self.assertIsNotNone(self.cpu_state.window_size)
+        self.assertEqual(self.cpu_state.window_size, (50, 120, 800, 600))
+
 
 class TestSyscallTermiosNonCanonical(unittest.TestCase):
     """Tests for SPARC to host termios c_cc translation in non-canonical mode.

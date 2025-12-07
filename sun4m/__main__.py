@@ -1,8 +1,33 @@
 import argparse
+import atexit
 import cProfile
+import os
 import sys
+import termios
 
 from .machine import Machine
+
+# Save original terminal attributes for restoration on exit
+_original_termios: list | None = None
+
+
+def _save_terminal_state() -> None:
+    """Save the current terminal state if stdin is a tty."""
+    global _original_termios
+    if os.isatty(0):
+        try:
+            _original_termios = termios.tcgetattr(0)
+        except termios.error:
+            pass
+
+
+def _restore_terminal_state() -> None:
+    """Restore the original terminal state if it was saved."""
+    if _original_termios is not None:
+        try:
+            termios.tcsetattr(0, termios.TCSANOW, _original_termios)
+        except termios.error:
+            pass
 
 parser = argparse.ArgumentParser(description="SPARC V8 user-mode emulator")
 parser.add_argument(
@@ -42,6 +67,10 @@ args = parser.parse_args()
 
 
 def main() -> None:
+    # Save terminal state before running guest program
+    _save_terminal_state()
+    atexit.register(_restore_terminal_state)
+
     machine: Machine = Machine(
         trace=args.trace, sysroot=args.sysroot, passthrough=args.passthrough
     )

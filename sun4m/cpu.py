@@ -325,6 +325,8 @@ class CpuState:
         )
         # Path to the executable (for /proc/self/exe emulation)
         self.exe_path: str = ""
+        # Terminal window size (rows, cols, xpixel, ypixel) set by TIOCSWINSZ
+        self.window_size: tuple[int, int, int, int] | None = None
         # Termination state
         self.halted: bool = False
         self.exit_code: int = 0
