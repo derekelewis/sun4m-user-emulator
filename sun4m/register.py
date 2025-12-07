@@ -6,15 +6,8 @@ class Window:
 
 
 class RegisterFile:
-    """SPARC register file with overlapping register windows.
 
-    The default of 64 windows is intentionally larger than real hardware
-    (typically 7-32 windows) to avoid implementing window overflow/underflow
-    traps. With 64 windows, deeply nested call chains won't exhaust the
-    window pool, eliminating the need to spill/fill registers to/from memory.
-    """
-
-    def __init__(self, n_windows: int = 64):
+    def __init__(self, n_windows: int = 8):
         self.n_windows: int = n_windows
         self.windows: list[Window] = [Window() for _ in range(n_windows)]
         self.g: list[int] = [0] * 8
@@ -35,8 +28,6 @@ class RegisterFile:
             raise ValueError("invalid register")
 
     def write_register(self, register: int, value: int) -> None:
-        # Mask to 32 bits to handle negative values from sign extension
-        value = value & 0xFFFFFFFF
         if register < 8:  # globals
             if register == 0:  # g[0] must always be 0
                 return
