@@ -86,7 +86,8 @@ class CpuState:
         inst_bytes = self.memory.read(self.pc, 4)
         inst_word = int.from_bytes(inst_bytes, "big")
         if self.trace:
-            print(f"PC={self.pc:#010x} inst: {hex(inst_word)}")
+            import sys
+            print(f"PC={self.pc:#010x} inst: {hex(inst_word)}", file=sys.stderr)
 
         instruction = decode(inst_word)
         instruction.execute(self)

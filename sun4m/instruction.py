@@ -101,11 +101,17 @@ class Format2Instruction(Instruction):
             case _:
                 raise ValueError(f"unknown branch condition: {self.cond:#06b}")
 
+        # Check if this is an unconditional branch (BA or BN)
+        is_unconditional = self.cond in (0b1000, 0b0000)  # BA or BN
+
         if take_branch:
             # Branch target is PC + (disp22 * 4)
             cpu_state.npc = (cpu_state.pc + (self.disp22 << 2)) & 0xFFFFFFFF
+            # For unconditional branches with annul, skip the delay slot
+            if self.a and is_unconditional:
+                cpu_state.annul_next = True
         elif self.a:
-            # Annul bit set and branch not taken: skip the delay slot
+            # Conditional branch not taken with annul: skip the delay slot
             cpu_state.annul_next = True
 
     def __str__(self) -> str:
