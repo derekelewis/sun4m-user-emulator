@@ -462,6 +462,8 @@ class Format3Instruction(Instruction):
                     quotient = -0x80000000
                 result = quotient & 0xFFFFFFFF
                 cpu_state.registers.write_register(self.rd, result)
+            case 0b101000:  # RDY instruction (Read Y register)
+                cpu_state.registers.write_register(self.rd, cpu_state.y)
             case 0b110000:  # WRY instruction (Write Y register)
                 op1 = cpu_state.registers.read_register(self.rs1)
                 op2 = self._get_operand2(cpu_state)
