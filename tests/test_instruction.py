@@ -105,9 +105,6 @@ class TestInstruction(unittest.TestCase):
             int.from_bytes(test_bytes[:4], "big"), cpu_state.registers.read_register(2)
         )
 
-    # TODO: need test_ld_instruction_rs2_execute:
-    def test_ld_instruction_rs2_execute(self): ...
-
     def test_st_instruction_simm13_execute(self):
         inst: int = 0xF027A044  # ST %i0, [ %fp + 0x44 ]
         st_instruction: Format3Instruction = Format3Instruction(inst)
@@ -124,9 +121,6 @@ class TestInstruction(unittest.TestCase):
         )
         st_instruction.execute(cpu_state)
         self.assertEqual(test_bytes[:4], cpu_state.memory.read(0x44, 4))
-
-    # TODO: need test_st_instruction_rs2_execute
-    def test_st_instruction_rs2_execute(self): ...
 
     def test_jmpl_instruction_simm13_execute(self):
         inst: int = 0x81C3E008  # JMPL [%o7 + 8], %g0
@@ -494,3 +488,510 @@ class TestInstruction(unittest.TestCase):
         # 5 - 10 = -5 (unsigned wraparound), borrow so C=1
         icc.update(0xFFFFFFFB, 5, 10, is_sub=True)
         self.assertTrue(icc.c)
+
+    # --- LDUB instruction tests ---
+
+    def test_ldub_instruction_simm13_execute(self):
+        # LDUB [%g1 + 4], %g2
+        # op=3, rd=2, op3=0b000001, rs1=1, i=1, simm13=4
+        inst: int = 0xC4086004
+        ldub_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldub_instruction.op, 3)
+        self.assertEqual(ldub_instruction.rd, 2)
+        self.assertEqual(ldub_instruction.op3, 0b000001)
+        self.assertEqual(ldub_instruction.rs1, 1)
+        self.assertEqual(ldub_instruction.i, 1)
+        self.assertEqual(ldub_instruction.simm13, 4)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(4, bytes([0xAB]))
+        cpu_state.registers.write_register(1, 0)
+        ldub_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xAB)
+
+    def test_ldub_instruction_rs2_execute(self):
+        # LDUB [%g1 + %g3], %g2
+        # op=3, rd=2, op3=0b000001, rs1=1, i=0, rs2=3
+        inst: int = 0xC4084003
+        ldub_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldub_instruction.i, 0)
+        self.assertEqual(ldub_instruction.rs2, 3)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0x14, bytes([0xCD]))
+        cpu_state.registers.write_register(1, 0x10)
+        cpu_state.registers.write_register(3, 0x4)
+        ldub_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xCD)
+
+    # --- LDSB instruction tests ---
+
+    def test_ldsb_instruction_positive(self):
+        # LDSB [%g1 + 0], %g2 - load positive byte
+        # op=3, rd=2, op3=0b001001, rs1=1, i=1, simm13=0
+        inst: int = 0xC4486000
+        ldsb_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldsb_instruction.op3, 0b001001)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x7F]))  # +127
+        ldsb_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x7F)
+
+    def test_ldsb_instruction_negative(self):
+        # LDSB with negative byte should sign-extend
+        inst: int = 0xC4486000
+        ldsb_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x80]))  # -128
+        ldsb_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xFFFFFF80)
+
+    # --- LDUH instruction tests ---
+
+    def test_lduh_instruction_execute(self):
+        # LDUH [%g1 + 0], %g2
+        # op=3, rd=2, op3=0b000010, rs1=1, i=1, simm13=0
+        inst: int = 0xC4106000
+        lduh_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(lduh_instruction.op3, 0b000010)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0xAB, 0xCD]))
+        lduh_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xABCD)
+
+    # --- LDSH instruction tests ---
+
+    def test_ldsh_instruction_positive(self):
+        # LDSH [%g1 + 0], %g2
+        # op=3, rd=2, op3=0b001010, rs1=1, i=1, simm13=0
+        inst: int = 0xC4506000
+        ldsh_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldsh_instruction.op3, 0b001010)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x7F, 0xFF]))  # +32767
+        ldsh_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x7FFF)
+
+    def test_ldsh_instruction_negative(self):
+        # LDSH with negative halfword should sign-extend
+        inst: int = 0xC4506000
+        ldsh_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x80, 0x00]))  # -32768
+        ldsh_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xFFFF8000)
+
+    # --- LDD instruction tests ---
+
+    def test_ldd_instruction_execute(self):
+        # LDD [%g1 + 0], %g2 - loads into %g2 and %g3
+        # op=3, rd=2, op3=0b000011, rs1=1, i=1, simm13=0
+        inst: int = 0xC4186000
+        ldd_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldd_instruction.op3, 0b000011)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]))
+        ldd_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x12345678)
+        self.assertEqual(cpu_state.registers.read_register(3), 0x9ABCDEF0)
+
+    # --- STB instruction tests ---
+
+    def test_stb_instruction_execute(self):
+        # STB %g2, [%g1 + 4]
+        # op=3, rd=2, op3=0b000101, rs1=1, i=1, simm13=4
+        inst: int = 0xC4286004
+        stb_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(stb_instruction.op3, 0b000101)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.registers.write_register(2, 0xABCDEF12)
+        cpu_state.registers.write_register(1, 0)
+        stb_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.memory.read(4, 1), bytes([0x12]))
+
+    # --- STH instruction tests ---
+
+    def test_sth_instruction_execute(self):
+        # STH %g2, [%g1 + 0]
+        # op=3, rd=2, op3=0b000110, rs1=1, i=1, simm13=0
+        inst: int = 0xC4306000
+        sth_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(sth_instruction.op3, 0b000110)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.registers.write_register(2, 0xABCD1234)
+        sth_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.memory.read(0, 2), bytes([0x12, 0x34]))
+
+    # --- STD instruction tests ---
+
+    def test_std_instruction_execute(self):
+        # STD %g2, [%g1 + 0] - stores %g2 and %g3
+        # op=3, rd=2, op3=0b000111, rs1=1, i=1, simm13=0
+        inst: int = 0xC4386000
+        std_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(std_instruction.op3, 0b000111)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.registers.write_register(2, 0x12345678)
+        cpu_state.registers.write_register(3, 0x9ABCDEF0)
+        std_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.memory.read(0, 8), bytes([0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]))
+
+    # --- SWAP instruction tests ---
+
+    def test_swap_instruction_execute(self):
+        # SWAP [%g1 + 0], %g2
+        # op=3, rd=2, op3=0b111111, rs1=1, i=1, simm13=0
+        inst: int = 0xC5F86000
+        swap_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(swap_instruction.op3, 0b111111)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x11, 0x22, 0x33, 0x44]))
+        cpu_state.registers.write_register(2, 0xAABBCCDD)
+        swap_instruction.execute(cpu_state)
+        # Memory should have register value
+        self.assertEqual(cpu_state.memory.read(0, 4), bytes([0xAA, 0xBB, 0xCC, 0xDD]))
+        # Register should have old memory value
+        self.assertEqual(cpu_state.registers.read_register(2), 0x11223344)
+
+    # --- Register-indexed load/store tests ---
+
+    def test_ld_instruction_rs2_execute(self):
+        # LD [%g1 + %g3], %g2 (register-indexed)
+        # op=3, rd=2, op3=0b000000, rs1=1, i=0, rs2=3
+        inst: int = 0xC4004003
+        ld_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ld_instruction.i, 0)
+        self.assertEqual(ld_instruction.rs2, 3)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0x20, bytes([0xDE, 0xAD, 0xBE, 0xEF]))
+        cpu_state.registers.write_register(1, 0x10)
+        cpu_state.registers.write_register(3, 0x10)
+        ld_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xDEADBEEF)
+
+    def test_st_instruction_rs2_execute(self):
+        # ST %g2, [%g1 + %g3] (register-indexed)
+        # op=3, rd=2, op3=0b000100, rs1=1, i=0, rs2=3
+        inst: int = 0xC4204003
+        st_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(st_instruction.i, 0)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.registers.write_register(1, 0x10)
+        cpu_state.registers.write_register(3, 0x10)
+        cpu_state.registers.write_register(2, 0xCAFEBABE)
+        st_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.memory.read(0x20, 4), bytes([0xCA, 0xFE, 0xBA, 0xBE]))
+
+    # --- ANDN instruction tests ---
+
+    def test_andn_instruction_execute(self):
+        # ANDN %g1, %g2, %g3 (result = g1 AND NOT g2)
+        # op=2, rd=3, op3=0b000101, rs1=1, i=0, rs2=2
+        inst: int = 0x86284002
+        andn_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(andn_instruction.op3, 0b000101)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFF00FF00)
+        cpu_state.registers.write_register(2, 0x0F0F0F0F)
+        andn_instruction.execute(cpu_state)
+        # 0xFF00FF00 AND NOT(0x0F0F0F0F) = 0xFF00FF00 AND 0xF0F0F0F0 = 0xF000F000
+        self.assertEqual(cpu_state.registers.read_register(3), 0xF000F000)
+
+    def test_andn_instruction_simm13(self):
+        # ANDN %g1, 0xFF, %g2
+        # op=2, rd=2, op3=0b000101, rs1=1, i=1, simm13=0xFF
+        inst: int = 0x842860FF
+        andn_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFFFFFFFF)
+        andn_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xFFFFFF00)
+
+    # --- XNOR instruction tests ---
+
+    def test_xnor_instruction_execute(self):
+        # XNOR %g1, %g2, %g3 (result = NOT(g1 XOR g2))
+        # op=2, rd=3, op3=0b000111, rs1=1, i=0, rs2=2
+        inst: int = 0x86384002
+        xnor_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(xnor_instruction.op3, 0b000111)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xAAAAAAAA)
+        cpu_state.registers.write_register(2, 0xAAAAAAAA)
+        xnor_instruction.execute(cpu_state)
+        # XNOR of same values = all 1s
+        self.assertEqual(cpu_state.registers.read_register(3), 0xFFFFFFFF)
+
+    def test_xnor_instruction_different(self):
+        # XNOR with different values
+        inst: int = 0x86384002
+        xnor_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFFFFFFFF)
+        cpu_state.registers.write_register(2, 0x00000000)
+        xnor_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0x00000000)
+
+    # --- SLL instruction tests ---
+
+    def test_sll_instruction_simm13(self):
+        # SLL %g1, 4, %g2
+        # op=2, rd=2, op3=0b100101, rs1=1, i=1, simm13=4
+        inst: int = 0x85286004
+        sll_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(sll_instruction.op3, 0b100101)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x12345678)
+        sll_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x23456780)
+
+    def test_sll_instruction_rs2(self):
+        # SLL %g1, %g3, %g2
+        # op=2, rd=2, op3=0b100101, rs1=1, i=0, rs2=3
+        inst: int = 0x85284003
+        sll_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x00000001)
+        cpu_state.registers.write_register(3, 16)
+        sll_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x00010000)
+
+    # --- SRL instruction tests ---
+
+    def test_srl_instruction_execute(self):
+        # SRL %g1, 4, %g2
+        # op=2, rd=2, op3=0b100110, rs1=1, i=1, simm13=4
+        inst: int = 0x85306004
+        srl_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(srl_instruction.op3, 0b100110)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x12345678)
+        srl_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x01234567)
+
+    def test_srl_instruction_no_sign_extend(self):
+        # SRL should NOT sign-extend (unlike SRA)
+        inst: int = 0x85306004
+        srl_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x80000000)
+        srl_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x08000000)
+
+    # --- UMUL instruction tests ---
+
+    def test_umul_instruction_execute(self):
+        # UMUL %g1, %g2, %g3
+        # op=2, rd=3, op3=0b001010, rs1=1, i=0, rs2=2
+        inst: int = 0x86504002
+        umul_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(umul_instruction.op3, 0b001010)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 200)
+        umul_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 20000)
+        self.assertEqual(cpu_state.y, 0)
+
+    def test_umul_instruction_large_result(self):
+        # UMUL with result > 32 bits
+        inst: int = 0x86504002
+        umul_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x10000)
+        cpu_state.registers.write_register(2, 0x10000)
+        umul_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0)
+        self.assertEqual(cpu_state.y, 1)
+
+    # --- UDIV instruction tests ---
+
+    def test_udiv_instruction_execute(self):
+        # UDIV %g1, %g2, %g3 (dividend is Y:rs1)
+        # op=2, rd=3, op3=0b001110, rs1=1, i=0, rs2=2
+        inst: int = 0x86704002
+        udiv_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(udiv_instruction.op3, 0b001110)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 0
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 10)
+        udiv_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 10)
+
+    def test_udiv_instruction_with_y(self):
+        # UDIV with Y contributing to dividend
+        inst: int = 0x86704002
+        udiv_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 1
+        cpu_state.registers.write_register(1, 0)
+        cpu_state.registers.write_register(2, 2)
+        udiv_instruction.execute(cpu_state)
+        # 0x100000000 / 2 = 0x80000000
+        self.assertEqual(cpu_state.registers.read_register(3), 0x80000000)
+
+    def test_udiv_instruction_division_by_zero(self):
+        inst: int = 0x86704002
+        udiv_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.y = 0
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 0)
+        with self.assertRaises(ValueError) as e:
+            udiv_instruction.execute(cpu_state)
+        self.assertEqual(str(e.exception), "division by zero")
+
+    # --- ADDX instruction tests ---
+
+    def test_addx_instruction_no_carry(self):
+        # ADDX %g1, %g2, %g3 with C=0
+        # op=2, rd=3, op3=0b001000, rs1=1, i=0, rs2=2
+        inst: int = 0x86404002
+        addx_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(addx_instruction.op3, 0b001000)
+        cpu_state: CpuState = CpuState()
+        cpu_state.icc.c = False
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 50)
+        addx_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 150)
+
+    def test_addx_instruction_with_carry(self):
+        # ADDX with C=1
+        inst: int = 0x86404002
+        addx_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.icc.c = True
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 50)
+        addx_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 151)
+
+    # --- SUBX instruction tests ---
+
+    def test_subx_instruction_no_borrow(self):
+        # SUBX %g1, %g2, %g3 with C=0 (no borrow)
+        # op=2, rd=3, op3=0b001100, rs1=1, i=0, rs2=2
+        inst: int = 0x86604002
+        subx_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(subx_instruction.op3, 0b001100)
+        cpu_state: CpuState = CpuState()
+        cpu_state.icc.c = False
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 30)
+        subx_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 70)
+
+    def test_subx_instruction_with_borrow(self):
+        # SUBX with C=1 (borrow from previous)
+        inst: int = 0x86604002
+        subx_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.icc.c = True
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 30)
+        subx_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 69)
+
+    # --- TSUBcc instruction tests ---
+
+    def test_tsubcc_instruction_execute(self):
+        # TSUBcc %g1, %g2, %g3
+        # op=2, rd=3, op3=0b100001, rs1=1, i=0, rs2=2
+        inst: int = 0x87084002
+        tsubcc_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(tsubcc_instruction.op3, 0b100001)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 100)
+        cpu_state.registers.write_register(2, 40)
+        tsubcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 60)
+        self.assertFalse(cpu_state.icc.z)
+        self.assertFalse(cpu_state.icc.n)
+
+    def test_tsubcc_instruction_sets_zero(self):
+        inst: int = 0x87084002
+        tsubcc_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 50)
+        cpu_state.registers.write_register(2, 50)
+        tsubcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0)
+        self.assertTrue(cpu_state.icc.z)
+
+    # --- ANDCC instruction tests ---
+
+    def test_andcc_instruction_execute(self):
+        # ANDCC %g1, %g2, %g3
+        # op=2, rd=3, op3=0b010001, rs1=1, i=0, rs2=2
+        inst: int = 0x86884002
+        andcc_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(andcc_instruction.op3, 0b010001)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFF00FF00)
+        cpu_state.registers.write_register(2, 0x00FF00FF)
+        andcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0)
+        self.assertTrue(cpu_state.icc.z)
+
+    def test_andcc_instruction_nonzero(self):
+        inst: int = 0x86884002
+        andcc_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFF00FF00)
+        cpu_state.registers.write_register(2, 0xFF000000)
+        andcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0xFF000000)
+        self.assertFalse(cpu_state.icc.z)
+        self.assertTrue(cpu_state.icc.n)
+
+    # --- ORCC instruction tests ---
+
+    def test_orcc_instruction_execute(self):
+        # ORCC %g1, %g2, %g3
+        # op=2, rd=3, op3=0b010010, rs1=1, i=0, rs2=2
+        inst: int = 0x86904002
+        orcc_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(orcc_instruction.op3, 0b010010)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0)
+        cpu_state.registers.write_register(2, 0)
+        orcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0)
+        self.assertTrue(cpu_state.icc.z)
+
+    def test_orcc_instruction_nonzero(self):
+        inst: int = 0x86904002
+        orcc_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x0000FFFF)
+        cpu_state.registers.write_register(2, 0xFFFF0000)
+        orcc_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0xFFFFFFFF)
+        self.assertFalse(cpu_state.icc.z)
+        self.assertTrue(cpu_state.icc.n)
+
+    # --- Flush Windows trap tests ---
+
+    def test_flush_windows_trap(self):
+        # TA 0x03 (Flush Windows)
+        # Format: op=2, cond=1000, op2=111010, rs1=0, i=1, imm7=3
+        inst: int = 0x91D02003  # TA 0x03
+        ta_instruction: TrapInstruction = TrapInstruction(inst)
+        self.assertEqual(ta_instruction.imm7, 0x03)
+        cpu_state: CpuState = CpuState()
+        # Should not raise - just a NOP in our implementation
+        ta_instruction.execute(cpu_state)
