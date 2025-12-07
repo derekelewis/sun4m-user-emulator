@@ -42,23 +42,50 @@ class TestInstruction(unittest.TestCase):
         self.assertEqual(cpu_state.registers.cwp, cpu_state.registers.n_windows - 1)
         self.assertEqual(cpu_state.registers.read_register(14), (-96) & 0xFFFFFFFF)
 
-    # TODO: need test_save_instruction_rs2_execute
-    def test_save_instruction_rs2_execute(self): ...
+    def test_save_instruction_rs2_execute(self):
+        # SAVE %sp, %g1, %sp -> op=2, rd=14, op3=0b111100, rs1=14, i=0, rs2=1
+        inst: int = 0x9DE38001
+        save_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(save_instruction.rd, 14)  # %sp
+        self.assertEqual(save_instruction.op3, 0b111100)  # op3 for SAVE
+        self.assertEqual(save_instruction.rs1, 14)  # %sp
+        self.assertEqual(save_instruction.i, 0)
+        self.assertEqual(save_instruction.rs2, 1)  # %g1
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(14, 0x1000)  # %sp = 0x1000
+        cpu_state.registers.write_register(1, 0x100)  # %g1 = 0x100
+        save_instruction.execute(cpu_state)
+        # CWP wraps from 0 to n_windows-1
+        self.assertEqual(cpu_state.registers.cwp, cpu_state.registers.n_windows - 1)
+        # New %sp = old %sp + %g1 = 0x1000 + 0x100 = 0x1100
+        self.assertEqual(cpu_state.registers.read_register(14), 0x1100)
 
-    # TODO: need test_restore_instruction_simm13_execute
-    def test_restore_instruction_simm13_execute(self): ...
+    def test_restore_instruction_simm13_execute(self):
+        # RESTORE %g1, 8, %g2 -> op=2, rd=2, op3=0b111101, rs1=1, i=1, simm13=8
+        inst: int = 0x85E86008
+        restore_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(restore_instruction.rd, 2)  # %g2
+        self.assertEqual(restore_instruction.op3, 0b111101)  # op3 for RESTORE
+        self.assertEqual(restore_instruction.rs1, 1)  # %g1
+        self.assertEqual(restore_instruction.i, 1)
+        self.assertEqual(restore_instruction.simm13, 8)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x100)  # %g1 = 0x100
+        restore_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.cwp, 1)
+        # Result = %g1 + 8 = 0x100 + 8 = 0x108
+        self.assertEqual(cpu_state.registers.read_register(2), 0x108)
 
-    # TODO: need more than just RESTORE %g0, %g0, %g0
     def test_restore_instruction_rs2_execute(self):
         inst: int = 0x81E80000  # RESTORE %g0, %g0, %g0 / RESTORE
-        save_instruction: Format3Instruction = Format3Instruction(inst)
-        self.assertEqual(save_instruction.rd, 0)  # %g0
-        self.assertEqual(save_instruction.op3, 0b111101)  # op3 for SAVE
-        self.assertEqual(save_instruction.rs1, 0)  # %g0
-        self.assertEqual(save_instruction.i, 0)  # not using immediate
-        self.assertEqual(save_instruction.rs2, 0)
+        restore_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(restore_instruction.rd, 0)  # %g0
+        self.assertEqual(restore_instruction.op3, 0b111101)  # op3 for RESTORE
+        self.assertEqual(restore_instruction.rs1, 0)  # %g0
+        self.assertEqual(restore_instruction.i, 0)  # not using immediate
+        self.assertEqual(restore_instruction.rs2, 0)
         cpu_state: CpuState = CpuState()
-        save_instruction.execute(cpu_state)
+        restore_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.registers.cwp, 1)
         self.assertEqual(cpu_state.registers.read_register(0), 0)
 
@@ -86,8 +113,20 @@ class TestInstruction(unittest.TestCase):
             cpu_state.registers.read_register(1) | 0xF0,
         )
 
-    # TODO: need test_or_instruction_rs2_execute
-    def test_or_instruction_rs2_execute(self): ...
+    def test_or_instruction_rs2_execute(self):
+        # OR %g1, %g2, %g3 -> op=2, rd=3, op3=0b000010, rs1=1, i=0, rs2=2
+        inst: int = 0x86104002
+        or_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(or_instruction.rd, 3)  # %g3
+        self.assertEqual(or_instruction.op3, 0b000010)  # op3 for OR
+        self.assertEqual(or_instruction.rs1, 1)  # %g1
+        self.assertEqual(or_instruction.i, 0)
+        self.assertEqual(or_instruction.rs2, 2)  # %g2
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0xFF00)
+        cpu_state.registers.write_register(2, 0x00FF)
+        or_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.registers.read_register(3), 0xFFFF)
 
     def test_ld_instruction_simm13_execute(self):
         inst: int = 0xC407A044  # ld [ %fp + 0x44 ], %g2
@@ -137,9 +176,25 @@ class TestInstruction(unittest.TestCase):
         cpu_state.registers.write_register(15, 0x200)
         jmpl_instruction.execute(cpu_state)
 
-    # TODO: need test_jmpl_instruction_rs2_execute:
-    def test_jump_instruction_rs2_execute(self):
-        pass
+    def test_jmpl_instruction_rs2_execute(self):
+        # JMPL [%g1 + %g2], %g3 -> op=2, rd=3, op3=0b111000, rs1=1, i=0, rs2=2
+        inst: int = 0x87C04002
+        jmpl_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(jmpl_instruction.rd, 3)
+        self.assertEqual(jmpl_instruction.op3, 0b111000)
+        self.assertEqual(jmpl_instruction.rs1, 1)
+        self.assertEqual(jmpl_instruction.i, 0)
+        self.assertEqual(jmpl_instruction.rs2, 2)
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x100
+        cpu_state.npc = 0x104
+        cpu_state.registers.write_register(1, 0x200)  # %g1
+        cpu_state.registers.write_register(2, 0x50)   # %g2
+        jmpl_instruction.execute(cpu_state)
+        # rd gets old PC
+        self.assertEqual(cpu_state.registers.read_register(3), 0x100)
+        # nPC = g1 + g2 = 0x200 + 0x50 = 0x250
+        self.assertEqual(cpu_state.npc, 0x250)
 
     def test_ta_instruction_imm7_execute(self):
         inst: int = 0x91D02010  # TA 0x10
@@ -154,8 +209,22 @@ class TestInstruction(unittest.TestCase):
             ta_instruction.execute(cpu_state)
         self.assertEqual(str(e.exception), "syscall 0 not implemented")
 
-    # TODO: need test_ta_instruction_rs2_execute
-    def test_ta_instruction_rs2_execute(self): ...
+    def test_ta_instruction_rs2_execute(self):
+        # TA %g1 + %g2 where trap_num = g1 + g2
+        # op=2, cond=1000, op3=111010, rs1=1, i=0, rs2=2
+        inst: int = 0x91D04002
+        ta_instruction: TrapInstruction = TrapInstruction(inst)
+        self.assertEqual(ta_instruction.op3, 0b111010)
+        self.assertEqual(ta_instruction.rs1, 1)
+        self.assertEqual(ta_instruction.i, 0)
+        self.assertEqual(ta_instruction.cond, 0b1000)
+        self.assertEqual(ta_instruction.rs2, 2)
+        cpu_state: CpuState = CpuState()
+        # Set g1=0x03 and g2=0x00 to trigger flush windows trap
+        cpu_state.registers.write_register(1, 0x03)
+        cpu_state.registers.write_register(2, 0x00)
+        # Should not raise - flush windows is a NOP in our implementation
+        ta_instruction.execute(cpu_state)
 
     # --- ADD instruction tests ---
 

@@ -129,10 +129,17 @@ class Syscall:
     def _syscall_brk(self):
         """
         brk syscall implementation
+
         Arguments:
           %o0 (reg 8) = new break address (0 = query current)
         Returns:
           %o0 = current break address, carry clear on success
+
+        LIMITATION: The heap is fixed at 1MB (0x100000 bytes) starting at
+        address 0x100000. Allocations beyond this limit will succeed from
+        brk's perspective but will cause MemoryError when the program
+        attempts to access memory beyond the allocated segment. Programs
+        requiring more heap space will need this limit increased.
         """
         new_brk = self.cpu_state.registers.read_register(8)
 
@@ -140,15 +147,15 @@ class Syscall:
         if self.cpu_state.brk == 0:
             # Set initial break to 0x100000 (1MB) - above typical code/data
             self.cpu_state.brk = 0x100000
-            # Create initial heap segment
+            # Create initial heap segment (1MB fixed size - see docstring)
             self.cpu_state.memory.add_segment(self.cpu_state.brk, 0x100000)
 
         if new_brk == 0:
             # Query current break
             self._return_success(self.cpu_state.brk)
         elif new_brk > self.cpu_state.brk:
-            # Extend the heap - for simplicity, we just update the break
-            # In a real implementation, we'd need to extend the memory segment
+            # Extend the heap - we only update the break pointer.
+            # Note: accesses beyond the initial 1MB segment will fail.
             self.cpu_state.brk = new_brk
             self._return_success(self.cpu_state.brk)
         else:
