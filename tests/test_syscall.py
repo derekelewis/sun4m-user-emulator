@@ -110,8 +110,8 @@ class TestSyscallBrk(unittest.TestCase):
 
         self.syscall.handle()
 
-        # Should return initial break (0x100000)
-        self.assertEqual(self.cpu_state.registers.read_register(8), 0x100000)
+        # Should return initial break (0x10000000 - heap starts at 256MB)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0x10000000)
 
     def test_brk_extend(self):
         """Test extending the break."""
@@ -120,13 +120,13 @@ class TestSyscallBrk(unittest.TestCase):
         self.cpu_state.registers.write_register(8, 0)
         self.syscall.handle()
 
-        # Now extend it
-        self.cpu_state.registers.write_register(8, 0x200000)
+        # Now extend it (heap starts at 0x10000000)
+        self.cpu_state.registers.write_register(8, 0x10200000)
         self.syscall.handle()
 
         # Should return new break
-        self.assertEqual(self.cpu_state.registers.read_register(8), 0x200000)
-        self.assertEqual(self.cpu_state.brk, 0x200000)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0x10200000)
+        self.assertEqual(self.cpu_state.brk, 0x10200000)
 
     def test_brk_shrink(self):
         """Test shrinking the break."""
@@ -135,16 +135,16 @@ class TestSyscallBrk(unittest.TestCase):
         self.cpu_state.registers.write_register(8, 0)
         self.syscall.handle()
 
-        self.cpu_state.registers.write_register(8, 0x200000)
+        self.cpu_state.registers.write_register(8, 0x10200000)
         self.syscall.handle()
 
         # Now shrink it
-        self.cpu_state.registers.write_register(8, 0x150000)
+        self.cpu_state.registers.write_register(8, 0x10150000)
         self.syscall.handle()
 
         # Should return new (smaller) break
-        self.assertEqual(self.cpu_state.registers.read_register(8), 0x150000)
-        self.assertEqual(self.cpu_state.brk, 0x150000)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0x10150000)
+        self.assertEqual(self.cpu_state.brk, 0x10150000)
 
 
 class TestSyscallIoctl(unittest.TestCase):
@@ -669,6 +669,651 @@ class TestSyscallFchmod(unittest.TestCase):
 
         self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
         self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallGetuid(unittest.TestCase):
+    """Tests for getuid/getgid family syscalls."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_getuid32(self):
+        """Test getuid32 returns 1000."""
+        self.cpu_state.registers.write_register(1, 44)  # getuid32
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_getgid(self):
+        """Test getgid returns 1000."""
+        self.cpu_state.registers.write_register(1, 47)  # getgid
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_geteuid(self):
+        """Test geteuid returns 1000."""
+        self.cpu_state.registers.write_register(1, 49)  # geteuid
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_getegid(self):
+        """Test getegid returns 1000."""
+        self.cpu_state.registers.write_register(1, 50)  # getegid
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_getgid32(self):
+        """Test getgid32 returns 1000."""
+        self.cpu_state.registers.write_register(1, 53)  # getgid32
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallSetuid(unittest.TestCase):
+    """Tests for setuid/setgid syscalls (stubs)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_setuid32(self):
+        """Test setuid32 returns success."""
+        self.cpu_state.registers.write_register(1, 87)  # setuid32
+        self.cpu_state.registers.write_register(8, 1000)  # uid
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_setgid32(self):
+        """Test setgid32 returns success."""
+        self.cpu_state.registers.write_register(1, 89)  # setgid32
+        self.cpu_state.registers.write_register(8, 1000)  # gid
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallChown(unittest.TestCase):
+    """Tests for chown syscall (stub)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_chown32(self):
+        """Test chown32 returns success (stub)."""
+        self.cpu_state.registers.write_register(1, 35)  # chown32
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname ptr
+        self.cpu_state.registers.write_register(9, 1000)  # owner
+        self.cpu_state.registers.write_register(10, 1000)  # group
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallDup2(unittest.TestCase):
+    """Tests for dup2 syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_dup2_stdout(self):
+        """Test dup2 can duplicate stdout."""
+        self.cpu_state.registers.write_register(1, 90)  # dup2
+        self.cpu_state.registers.write_register(8, 1)  # oldfd (stdout)
+        self.cpu_state.registers.write_register(9, 10)  # newfd
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 10)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_dup2_invalid_fd(self):
+        """Test dup2 with invalid oldfd returns EBADF."""
+        self.cpu_state.registers.write_register(1, 90)  # dup2
+        self.cpu_state.registers.write_register(8, 99)  # invalid oldfd
+        self.cpu_state.registers.write_register(9, 10)  # newfd
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallChdir(unittest.TestCase):
+    """Tests for chdir syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        self.original_dir = os.getcwd()
+
+    def tearDown(self):
+        os.chdir(self.original_dir)
+
+    def test_chdir_success(self):
+        """Test chdir to /tmp succeeds."""
+        path = b"/tmp\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 12)  # chdir
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname ptr
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_chdir_enoent(self):
+        """Test chdir to nonexistent path returns ENOENT."""
+        path = b"/nonexistent_path_12345\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 12)  # chdir
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname ptr
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)  # ENOENT
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestPassthrough(unittest.TestCase):
+    """Tests for passthrough path handling."""
+
+    def test_translate_path_no_sysroot(self):
+        """Without sysroot, paths are unchanged."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable()
+        self.assertEqual(fdt.translate_path("/home/user/file"), "/home/user/file")
+
+    def test_translate_path_with_sysroot(self):
+        """With sysroot, absolute paths are prefixed."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot")
+        self.assertEqual(fdt.translate_path("/home/user/file"), "/sysroot/home/user/file")
+
+    def test_translate_path_passthrough_exact(self):
+        """Passthrough paths are not prefixed with sysroot."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home"])
+        self.assertEqual(fdt.translate_path("/home/user/file"), "/home/user/file")
+
+    def test_translate_path_passthrough_subdir(self):
+        """Passthrough also works for subdirectories."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp"])
+        self.assertEqual(fdt.translate_path("/tmp/foo/bar"), "/tmp/foo/bar")
+
+    def test_translate_path_passthrough_no_partial_match(self):
+        """Passthrough does not match partial directory names."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp"])
+        # /tmpfiles should NOT match /tmp passthrough
+        self.assertEqual(fdt.translate_path("/tmpfiles/foo"), "/sysroot/tmpfiles/foo")
+
+    def test_translate_path_multiple_passthrough(self):
+        """Multiple passthrough paths work correctly."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp", "/home"])
+        self.assertEqual(fdt.translate_path("/tmp/file"), "/tmp/file")
+        self.assertEqual(fdt.translate_path("/home/user"), "/home/user")
+        self.assertEqual(fdt.translate_path("/var/log"), "/sysroot/var/log")
+
+    def test_translate_path_relative_unchanged(self):
+        """Relative paths are not affected by sysroot or passthrough."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fdt = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp"])
+        self.assertEqual(fdt.translate_path("./file"), "./file")
+        self.assertEqual(fdt.translate_path("relative/path"), "relative/path")
+
+
+class TestSyscallLlseek(unittest.TestCase):
+    """Tests for _llseek syscall (64-bit seek)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file.write(b"x" * 1000)
+        self.temp_file.close()
+        # Open the file
+        path = self.temp_file.name.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 5)  # open
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0)  # O_RDONLY
+        self.syscall.handle()
+        self.fd = self.cpu_state.registers.read_register(8)
+
+    def tearDown(self):
+        os.unlink(self.temp_file.name)
+
+    def test_llseek_to_offset(self):
+        """Test _llseek seeks to correct position."""
+        self.cpu_state.registers.write_register(1, 236)  # _llseek
+        self.cpu_state.registers.write_register(8, self.fd)  # fd
+        self.cpu_state.registers.write_register(9, 0)  # offset_high
+        self.cpu_state.registers.write_register(10, 500)  # offset_low
+        self.cpu_state.registers.write_register(11, 0x1500)  # result ptr
+        self.cpu_state.registers.write_register(12, 0)  # SEEK_SET
+        self.syscall.handle()
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+        # Check result was written
+        result = self.cpu_state.memory.read(0x1500, 8)
+        import struct
+        pos = struct.unpack(">Q", result)[0]
+        self.assertEqual(pos, 500)
+
+
+class TestPassthroughPathTranslation(unittest.TestCase):
+    """Tests for passthrough path translation in FileDescriptorTable."""
+
+    def test_no_passthrough_with_sysroot(self):
+        """Test that paths are translated through sysroot when no passthrough."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=[])
+        self.assertEqual(fd_table.translate_path("/bin/ls"), "/sysroot/bin/ls")
+        self.assertEqual(fd_table.translate_path("/etc/passwd"), "/sysroot/etc/passwd")
+
+    def test_passthrough_exact_match(self):
+        """Test that exact passthrough path match bypasses sysroot."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp"])
+        self.assertEqual(fd_table.translate_path("/tmp"), "/tmp")
+
+    def test_passthrough_prefix_match(self):
+        """Test that paths under passthrough prefix bypass sysroot."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home"])
+        self.assertEqual(fd_table.translate_path("/home/user/file"), "/home/user/file")
+        self.assertEqual(fd_table.translate_path("/home/user/dir/file"), "/home/user/dir/file")
+
+    def test_passthrough_does_not_match_similar_prefix(self):
+        """Test that /homedir does not match /home passthrough."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home"])
+        # /homedir should NOT match /home passthrough
+        self.assertEqual(fd_table.translate_path("/homedir/file"), "/sysroot/homedir/file")
+
+    def test_passthrough_trailing_slash(self):
+        """Test passthrough with trailing slash works correctly."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/tmp/"])
+        self.assertEqual(fd_table.translate_path("/tmp/foo"), "/tmp/foo")
+        # /tmp itself does not match /tmp/ passthrough (only children match)
+        self.assertEqual(fd_table.translate_path("/tmp"), "/sysroot/tmp")
+
+    def test_multiple_passthrough_paths(self):
+        """Test multiple passthrough paths work independently."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=["/home", "/tmp"])
+        self.assertEqual(fd_table.translate_path("/home/user"), "/home/user")
+        self.assertEqual(fd_table.translate_path("/tmp/test"), "/tmp/test")
+        self.assertEqual(fd_table.translate_path("/etc/passwd"), "/sysroot/etc/passwd")
+
+    def test_no_sysroot_no_translation(self):
+        """Test that paths are not modified when no sysroot is set."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="", passthrough=[])
+        self.assertEqual(fd_table.translate_path("/bin/ls"), "/bin/ls")
+
+    def test_relative_path_not_translated(self):
+        """Test that relative paths are not translated."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable(sysroot="/sysroot", passthrough=[])
+        self.assertEqual(fd_table.translate_path("relative/path"), "relative/path")
+
+
+class TestDirectoryOpen(unittest.TestCase):
+    """Tests for opening directories."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x2000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_open_directory(self):
+        """Test opening a directory returns a valid fd."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable()
+        fd = fd_table.open(self.temp_dir, 0x10000)  # O_DIRECTORY
+        self.assertGreater(fd, 0)
+        desc = fd_table.get(fd)
+        self.assertIsNotNone(desc)
+        self.assertTrue(desc.is_directory)
+        self.assertIsNotNone(desc.dir_fd)
+        fd_table.close(fd)
+
+    def test_open_directory_without_flag(self):
+        """Test opening a directory without O_DIRECTORY flag still works."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable()
+        fd = fd_table.open(self.temp_dir, 0)  # O_RDONLY
+        self.assertGreater(fd, 0)
+        desc = fd_table.get(fd)
+        self.assertTrue(desc.is_directory)
+        fd_table.close(fd)
+
+    def test_close_directory(self):
+        """Test closing a directory fd."""
+        from sun4m.cpu import FileDescriptorTable
+
+        fd_table = FileDescriptorTable()
+        fd = fd_table.open(self.temp_dir, 0x10000)
+        result = fd_table.close(fd)
+        self.assertEqual(result, 0)
+        self.assertIsNone(fd_table.get(fd))
+
+
+class TestSyscallGetdents64(unittest.TestCase):
+    """Tests for getdents64 syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x4000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+        # Create some test files
+        open(os.path.join(self.temp_dir, "file1.txt"), "w").close()
+        open(os.path.join(self.temp_dir, "file2.txt"), "w").close()
+        os.mkdir(os.path.join(self.temp_dir, "subdir"))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_getdents64_reads_entries(self):
+        """Test getdents64 returns directory entries."""
+        # Open the directory
+        path = self.temp_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 5)  # open
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname
+        self.cpu_state.registers.write_register(9, 0x10000)  # O_DIRECTORY
+        self.syscall.handle()
+        fd = self.cpu_state.registers.read_register(8)
+        self.assertGreater(fd, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Call getdents64
+        self.cpu_state.registers.write_register(1, 154)  # getdents64
+        self.cpu_state.registers.write_register(8, fd)
+        self.cpu_state.registers.write_register(9, 0x2000)  # buffer
+        self.cpu_state.registers.write_register(10, 4096)  # size
+        self.syscall.handle()
+
+        bytes_read = self.cpu_state.registers.read_register(8)
+        self.assertGreater(bytes_read, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_getdents64_end_of_directory(self):
+        """Test getdents64 returns 0 at end of directory."""
+        # Open the directory
+        path = self.temp_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 5)  # open
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0x10000)
+        self.syscall.handle()
+        fd = self.cpu_state.registers.read_register(8)
+
+        # Read all entries
+        self.cpu_state.registers.write_register(1, 154)
+        self.cpu_state.registers.write_register(8, fd)
+        self.cpu_state.registers.write_register(9, 0x2000)
+        self.cpu_state.registers.write_register(10, 4096)
+        self.syscall.handle()
+
+        # Read again - should return 0 (end of directory)
+        self.cpu_state.registers.write_register(1, 154)
+        self.cpu_state.registers.write_register(8, fd)
+        self.cpu_state.registers.write_register(9, 0x2000)
+        self.cpu_state.registers.write_register(10, 4096)
+        self.syscall.handle()
+
+        bytes_read = self.cpu_state.registers.read_register(8)
+        self.assertEqual(bytes_read, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_getdents64_invalid_fd(self):
+        """Test getdents64 returns EBADF for invalid fd."""
+        self.cpu_state.registers.write_register(1, 154)
+        self.cpu_state.registers.write_register(8, 999)  # invalid fd
+        self.cpu_state.registers.write_register(9, 0x2000)
+        self.cpu_state.registers.write_register(10, 4096)
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
+        self.assertTrue(self.cpu_state.icc.c)
+
+    def test_getdents64_on_regular_file(self):
+        """Test getdents64 returns EBADF for regular file."""
+        # Open a regular file
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
+        temp_file.close()
+        try:
+            path = temp_file.name.encode() + b"\x00"
+            self.cpu_state.memory.write(0x1000, path)
+            self.cpu_state.registers.write_register(1, 5)
+            self.cpu_state.registers.write_register(8, 0x1000)
+            self.cpu_state.registers.write_register(9, 0)  # O_RDONLY
+            self.syscall.handle()
+            fd = self.cpu_state.registers.read_register(8)
+
+            # Try getdents64 on it
+            self.cpu_state.registers.write_register(1, 154)
+            self.cpu_state.registers.write_register(8, fd)
+            self.cpu_state.registers.write_register(9, 0x2000)
+            self.cpu_state.registers.write_register(10, 4096)
+            self.syscall.handle()
+
+            self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
+            self.assertTrue(self.cpu_state.icc.c)
+        finally:
+            os.unlink(temp_file.name)
+
+
+class TestSyscallUmask(unittest.TestCase):
+    """Tests for umask syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+        # Save original umask
+        self.original_umask = os.umask(0o022)
+        os.umask(self.original_umask)
+
+    def tearDown(self):
+        # Restore original umask
+        os.umask(self.original_umask)
+
+    def test_umask_returns_old_value(self):
+        """Test umask returns the previous mask."""
+        os.umask(0o022)
+        self.cpu_state.registers.write_register(1, 60)  # umask
+        self.cpu_state.registers.write_register(8, 0o077)
+        self.syscall.handle()
+
+        old_mask = self.cpu_state.registers.read_register(8)
+        self.assertEqual(old_mask, 0o022)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_umask_sets_new_value(self):
+        """Test umask actually sets the new mask."""
+        self.cpu_state.registers.write_register(1, 60)
+        self.cpu_state.registers.write_register(8, 0o077)
+        self.syscall.handle()
+
+        # Verify by calling again
+        self.cpu_state.registers.write_register(1, 60)
+        self.cpu_state.registers.write_register(8, 0o022)
+        self.syscall.handle()
+
+        old_mask = self.cpu_state.registers.read_register(8)
+        self.assertEqual(old_mask, 0o077)
+
+
+class TestSyscallMkdir(unittest.TestCase):
+    """Tests for mkdir syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_mkdir_creates_directory(self):
+        """Test mkdir creates a new directory."""
+        new_dir = os.path.join(self.temp_dir, "newdir")
+        path = new_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+
+        self.cpu_state.registers.write_register(1, 136)  # mkdir
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0o755)
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+        self.assertTrue(os.path.isdir(new_dir))
+
+    def test_mkdir_existing_directory(self):
+        """Test mkdir returns EEXIST for existing directory."""
+        path = self.temp_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+
+        self.cpu_state.registers.write_register(1, 136)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0o755)
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 17)  # EEXIST
+        self.assertTrue(self.cpu_state.icc.c)
+
+    def test_mkdir_nonexistent_parent(self):
+        """Test mkdir returns ENOENT for nonexistent parent."""
+        path = b"/nonexistent/path/newdir\x00"
+        self.cpu_state.memory.write(0x1000, path)
+
+        self.cpu_state.registers.write_register(1, 136)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0o755)
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)  # ENOENT
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallFstat64Directory(unittest.TestCase):
+    """Tests for fstat64 on directory file descriptors."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_fstat64_on_directory(self):
+        """Test fstat64 works on directory fd."""
+        # Open directory
+        path = self.temp_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 5)  # open
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0x10000)  # O_DIRECTORY
+        self.syscall.handle()
+        fd = self.cpu_state.registers.read_register(8)
+        self.assertGreater(fd, 0)
+
+        # Call fstat64
+        self.cpu_state.registers.write_register(1, 28)  # fstat64
+        self.cpu_state.registers.write_register(8, fd)
+        self.cpu_state.registers.write_register(9, 0x1100)  # stat buffer
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify it's a directory (check st_mode at offset 0x14)
+        stat_buf = self.cpu_state.memory.read(0x1100, 104)
+        st_mode = int.from_bytes(stat_buf[0x14:0x18], "big")
+        self.assertTrue(st_mode & 0o040000)  # S_IFDIR
+
+
+class TestSyscallStatxDirectory(unittest.TestCase):
+    """Tests for statx on directory file descriptors."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x2000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_statx_on_directory_fd_with_empty_path(self):
+        """Test statx with AT_EMPTY_PATH on directory fd."""
+        # Open directory
+        path = self.temp_dir.encode() + b"\x00"
+        self.cpu_state.memory.write(0x1000, path)
+        self.cpu_state.registers.write_register(1, 5)  # open
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0x10000)  # O_DIRECTORY
+        self.syscall.handle()
+        fd = self.cpu_state.registers.read_register(8)
+        self.assertGreater(fd, 0)
+
+        # Write empty string for pathname
+        self.cpu_state.memory.write(0x1100, b"\x00")
+
+        # Call statx with AT_EMPTY_PATH
+        self.cpu_state.registers.write_register(1, 360)  # statx
+        self.cpu_state.registers.write_register(8, fd)  # dirfd
+        self.cpu_state.registers.write_register(9, 0x1100)  # empty pathname
+        self.cpu_state.registers.write_register(10, 0x1000)  # AT_EMPTY_PATH
+        self.cpu_state.registers.write_register(11, 0x7ff)  # mask
+        self.cpu_state.registers.write_register(12, 0x1200)  # statxbuf
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify it's a directory (check stx_mode at offset 0x1c)
+        statx_buf = self.cpu_state.memory.read(0x1200, 256)
+        stx_mode = int.from_bytes(statx_buf[0x1c:0x1e], "big")
+        self.assertTrue(stx_mode & 0o040000)  # S_IFDIR
 
 
 if __name__ == "__main__":

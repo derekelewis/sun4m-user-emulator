@@ -37,10 +37,17 @@ INTERP_BASE = MMAP_BASE  # 0x40000000
 
 class Machine:
 
-    def __init__(self, trace: bool = False, sysroot: str = ""):
+    def __init__(
+        self,
+        trace: bool = False,
+        sysroot: str = "",
+        passthrough: list[str] | None = None,
+    ):
         self.memory: SystemMemory = SystemMemory()
         # CpuState shares the same memory object to keep a single address space.
-        self.cpu: CpuState = CpuState(memory=self.memory, trace=trace, sysroot=sysroot)
+        self.cpu: CpuState = CpuState(
+            memory=self.memory, trace=trace, sysroot=sysroot, passthrough=passthrough
+        )
         self.entrypoint: int | None = None
         self.trace: bool = trace
         self.sysroot: str = sysroot

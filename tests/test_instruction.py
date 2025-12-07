@@ -891,6 +891,43 @@ class TestInstruction(unittest.TestCase):
         andn_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.registers.read_register(2), 0xFFFFFF00)
 
+    # --- ORN instruction tests ---
+
+    def test_orn_instruction_execute(self):
+        # ORN %g1, %g2, %g3 (result = g1 OR NOT g2)
+        # op=2, rd=3, op3=0b000110, rs1=1, i=0, rs2=2
+        inst: int = 0x86304002
+        orn_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(orn_instruction.op3, 0b000110)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x0F0F0F0F)
+        cpu_state.registers.write_register(2, 0xF0F0F0F0)
+        orn_instruction.execute(cpu_state)
+        # 0x0F0F0F0F OR NOT(0xF0F0F0F0) = 0x0F0F0F0F OR 0x0F0F0F0F = 0x0F0F0F0F
+        self.assertEqual(cpu_state.registers.read_register(3), 0x0F0F0F0F)
+
+    def test_orn_instruction_simm13(self):
+        # ORN %g1, 0x00, %g2 (result = g1 OR NOT 0 = g1 OR 0xFFFFFFFF = 0xFFFFFFFF)
+        # op=2, rd=2, op3=0b000110, rs1=1, i=1, simm13=0
+        inst: int = 0x84306000
+        orn_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x12345678)
+        orn_instruction.execute(cpu_state)
+        # Any value OR 0xFFFFFFFF = 0xFFFFFFFF
+        self.assertEqual(cpu_state.registers.read_register(2), 0xFFFFFFFF)
+
+    def test_orn_instruction_all_ones(self):
+        # ORN %g1, 0xFFFFFFFF, %g2 (result = g1 OR NOT 0xFFFFFFFF = g1 OR 0 = g1)
+        # op=2, rd=2, op3=0b000110, rs1=1, i=1, simm13=-1 (0x1FFF sign-extended)
+        inst: int = 0x84307FFF
+        orn_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.registers.write_register(1, 0x12345678)
+        orn_instruction.execute(cpu_state)
+        # value OR 0 = value
+        self.assertEqual(cpu_state.registers.read_register(2), 0x12345678)
+
     # --- XNOR instruction tests ---
 
     def test_xnor_instruction_execute(self):

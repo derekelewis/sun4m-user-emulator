@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import IO
@@ -19,6 +20,8 @@ class FileDescriptor:
     position: int = 0
     flags: int = 0
     is_special: bool = False  # True for stdin/stdout/stderr
+    is_directory: bool = False  # True for directory file descriptors
+    dir_fd: int | None = None  # OS-level directory fd for getdents64
 
 
 @dataclass
@@ -28,6 +31,7 @@ class FileDescriptorTable:
     _table: dict[int, FileDescriptor] = field(default_factory=dict)
     _next_fd: int = 3  # Start after stdin/stdout/stderr
     sysroot: str = ""  # Path prefix for guest filesystem access
+    passthrough: list[str] = field(default_factory=list)  # Paths to access directly
 
     def __post_init__(self) -> None:
         # Pre-populate stdin, stdout, stderr
@@ -36,17 +40,60 @@ class FileDescriptorTable:
         self._table[2] = FileDescriptor(fd=2, path="/dev/stderr", file=None, is_special=True)
 
     def translate_path(self, guest_path: str) -> str:
-        """Translate a guest path to a host path using the sysroot."""
+        """Translate a guest path to a host path using the sysroot.
+
+        Paths matching any passthrough prefix are accessed directly on the host
+        without sysroot translation.
+        """
         if self.sysroot and guest_path.startswith("/"):
+            # Check if path matches any passthrough prefix
+            for prefix in self.passthrough:
+                if guest_path == prefix or guest_path.startswith(prefix.rstrip("/") + "/"):
+                    return guest_path
             return self.sysroot + guest_path
         return guest_path
 
     def open(self, path: str, flags: int, mode: int = 0o644) -> int:
         """Open a file and return its file descriptor, or negative errno on error."""
-        import os
+        O_DIRECTORY = 0x10000
 
         host_path = self.translate_path(path)
 
+        # Check if this is a directory open
+        try:
+            is_dir = os.path.isdir(host_path)
+        except OSError:
+            is_dir = False
+
+        if is_dir or (flags & O_DIRECTORY):
+            # Opening a directory - use low-level os.open()
+            try:
+                os_flags = os.O_RDONLY
+                if hasattr(os, "O_DIRECTORY"):
+                    os_flags |= os.O_DIRECTORY
+                dir_fd = os.open(host_path, os_flags)
+            except FileNotFoundError:
+                return -2  # ENOENT
+            except NotADirectoryError:
+                return -20  # ENOTDIR
+            except PermissionError:
+                return -13  # EACCES
+            except OSError as e:
+                return -e.errno if e.errno else -5  # EIO
+
+            fd = self._next_fd
+            self._next_fd += 1
+            self._table[fd] = FileDescriptor(
+                fd=fd,
+                path=path,
+                file=None,
+                flags=flags,
+                is_directory=True,
+                dir_fd=dir_fd,
+            )
+            return fd
+
+        # Regular file open
         # Convert Linux O_* flags to Python mode string
         # Linux flags: O_RDONLY=0, O_WRONLY=1, O_RDWR=2, O_CREAT=0x40, O_TRUNC=0x200, O_APPEND=0x400
         access_mode = flags & 3
@@ -89,7 +136,9 @@ class FileDescriptorTable:
         if desc.is_special:
             # Don't actually close stdin/stdout/stderr
             return 0
-        if desc.file:
+        if desc.is_directory and desc.dir_fd is not None:
+            os.close(desc.dir_fd)
+        elif desc.file:
             desc.file.close()
         del self._table[fd]
         return 0
@@ -157,6 +206,48 @@ class FileDescriptorTable:
         except OSError as e:
             return -e.errno if e.errno else -5
 
+    def dup2(self, oldfd: int, newfd: int) -> int:
+        """Duplicate a file descriptor. Returns newfd or negative errno."""
+        old_desc = self.get(oldfd)
+        if old_desc is None:
+            return -9  # EBADF
+
+        # If newfd is already open, close it first
+        if newfd in self._table:
+            self.close(newfd)
+
+        # Create a new descriptor pointing to the same file
+        if old_desc.is_special:
+            # For special fds (stdin/stdout/stderr), just create an alias
+            self._table[newfd] = FileDescriptor(
+                fd=newfd,
+                path=old_desc.path,
+                file=None,
+                is_special=True,
+            )
+        elif old_desc.file is not None:
+            # Duplicate the underlying OS file descriptor
+            try:
+                new_os_fd = os.dup(old_desc.file.fileno())
+                new_file = os.fdopen(new_os_fd, old_desc.file.mode)
+                self._table[newfd] = FileDescriptor(
+                    fd=newfd,
+                    path=old_desc.path,
+                    file=new_file,
+                    position=old_desc.position,
+                    flags=old_desc.flags,
+                )
+            except OSError as e:
+                return -e.errno if e.errno else -9
+        else:
+            return -9  # EBADF
+
+        # Update next_fd if necessary
+        if newfd >= self._next_fd:
+            self._next_fd = newfd + 1
+
+        return newfd
+
 
 class ICC:
     """Integer Condition Codes (N, Z, V, C)."""
@@ -212,6 +303,7 @@ class CpuState:
         memory: SystemMemory | None = None,
         trace: bool = False,
         sysroot: str = "",
+        passthrough: list[str] | None = None,
     ):
         self.trace: bool = trace
         self.pc: int = 0
@@ -228,7 +320,9 @@ class CpuState:
         # Program break address for brk syscall (heap management)
         self.brk: int = 0
         # File descriptor table for file I/O syscalls
-        self.fd_table: FileDescriptorTable = FileDescriptorTable(sysroot=sysroot)
+        self.fd_table: FileDescriptorTable = FileDescriptorTable(
+            sysroot=sysroot, passthrough=passthrough or []
+        )
         # Path to the executable (for /proc/self/exe emulation)
         self.exe_path: str = ""
 

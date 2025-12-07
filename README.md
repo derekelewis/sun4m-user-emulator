@@ -33,6 +33,16 @@ python -m sun4m ./bin/gzip --help
 # Run a dynamically linked binary (requires sysroot with uClibc)
 python -m sun4m --sysroot /path/to/buildroot/output/target ./bin/gzip_dynamic --help
 
+# Run busybox utilities (tar, etc.)
+python -m sun4m --sysroot /path/to/buildroot/output/target \
+  /path/to/buildroot/output/target/bin/tar --help
+
+# Access host filesystem paths directly with --passthrough
+# (bypasses sysroot translation for specified paths)
+python -m sun4m --sysroot /path/to/buildroot/output/target \
+  --passthrough /home --passthrough /tmp \
+  /path/to/buildroot/output/target/bin/tar cvf /tmp/archive.tar /home/user/files
+
 # Run tests
 python -m unittest
 
@@ -40,13 +50,22 @@ python -m unittest
 make -C bin clean all
 ```
 
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--sysroot PATH` | Path prefix for guest filesystem (e.g., buildroot output/target) |
+| `--passthrough PATH` | Host path to access directly, bypassing sysroot (repeatable) |
+| `--steps N` | Maximum number of instructions to execute |
+| `--trace` | Enable instruction tracing |
+
 ## Architecture
 
 - `Machine` owns `SystemMemory` segments and a `CpuState`; execute with `machine.cpu.step()` or `run()`
 - Register windows follow SPARC V8 semantics—each window stores ins and locals; outs resolve via CWP overlap
 - ELF loader supports both static and dynamically linked executables, including PT_INTERP parsing and R_SPARC_RELATIVE relocations
 - Dynamic linking works by loading the uClibc interpreter and setting up the auxiliary vector (auxv)
-- Syscalls include file I/O (open, read, write, close, lseek, stat), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, etc.)
+- Syscalls include file I/O (open, read, write, close, lseek, stat, mkdir, getdents64), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, umask, etc.)
 
 ## License
 
