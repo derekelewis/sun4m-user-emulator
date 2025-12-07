@@ -397,7 +397,7 @@ class Syscall:
                             when = termios.TCSAFLUSH
                         termios.tcsetattr(fd, when, attrs)
                     except (termios.error, OSError, IndexError, struct.error) as e:
-                        logger.debug("termios.tcsetattr failed: %s", e)
+                        logger.warning("termios.tcsetattr failed: %s", e)
                 self._return_success(0)
             elif request == TIOCGWINSZ:
                 # Get window size
@@ -452,8 +452,7 @@ class Syscall:
           c_cflag: 4 bytes
           c_lflag: 4 bytes
           c_line:  1 byte
-          c_cc:    17 bytes (NCCS=17 on SPARC)
-          padding: 2 bytes (to align to 36)
+          c_cc:    19 bytes (NCCS=17 on SPARC, plus 2 bytes padding)
         """
         iflag, oflag, cflag, lflag, ispeed, ospeed, cc = attrs
         buf = bytearray(36)
@@ -861,7 +860,6 @@ class Syscall:
         read_fds: list[int] = []
         write_fds: list[int] = []
         except_fds: list[int] = []
-        fd_to_idx: dict[int, int] = {}  # Map host fd to pollfd index
 
         for i in range(nfds):
             pollfd_data = self.cpu_state.memory.read(fds_ptr + i * 8, 8)
@@ -874,8 +872,6 @@ class Syscall:
             host_fd = self._get_host_fd(fd)
             if host_fd is None:
                 continue
-
-            fd_to_idx[host_fd] = i
 
             if events & (POLLIN | POLLPRI):
                 read_fds.append(host_fd)
