@@ -8,6 +8,8 @@ TODOs
 2. ELF
     - [x] ELF file loading
     - [x] Program argument passing (argc/argv on stack)
+    - [x] Dynamic linking support (PT_INTERP, R_SPARC_RELATIVE relocations)
+    - [x] Auxiliary vector (auxv) setup for dynamic linker
     - [x] Testing
 3. CPU operations
     - [x] Registers
@@ -20,71 +22,76 @@ TODOs
         - [x] NOP
         - [x] SETHI
         - Arithmetic/Logical:
-            - [x] ADD
-            - [x] ADDCC
-            - [x] ADDX (add with carry)
-            - [x] SUB
-            - [x] SUBCC (cmp)
-            - [x] SUBX (subtract with carry)
+            - [x] ADD, ADDCC, ADDX (add with carry)
+            - [x] SUB, SUBCC, SUBX (subtract with carry)
             - [x] TSUBcc (tagged subtract)
-            - [x] AND
-            - [x] ANDCC
-            - [x] ANDN (and not)
-            - [x] OR
-            - [x] ORCC
-            - [x] XOR
-            - [x] XNOR
-            - [x] SLL (shift left logical)
-            - [x] SRL (shift right logical)
-            - [x] SRA (shift right arithmetic)
-            - [x] SMUL (signed multiply)
-            - [x] UMUL (unsigned multiply)
-            - [x] SDIV (signed divide)
-            - [x] UDIV (unsigned divide)
+            - [x] AND, ANDCC, ANDN (and not)
+            - [x] OR, ORCC, ORN (or not)
+            - [x] XOR, XNOR
+            - [x] SLL, SRL, SRA (shifts)
+            - [x] SMUL, UMUL (multiply)
+            - [x] SDIV, UDIV (divide)
         - Load/Store:
-            - [x] LD (load word)
-            - [x] LDUB (load unsigned byte)
-            - [x] LDSB (load signed byte)
-            - [x] LDUH (load unsigned halfword)
-            - [x] LDSH (load signed halfword)
-            - [x] LDD (load doubleword)
-            - [x] ST (store word)
-            - [x] STB (store byte)
-            - [x] STH (store halfword)
-            - [x] STD (store doubleword)
+            - [x] LD, LDUB, LDSB, LDUH, LDSH, LDD
+            - [x] ST, STB, STH, STD
             - [x] LDSTUB (atomic load-store unsigned byte)
             - [x] SWAP (atomic swap)
         - Control:
-            - [x] Bicc (all conditions: bn, ba, bne, be, bg, ble, bge, bl, bgu, bleu, bcc, bcs, bpos, bneg, bvc, bvs)
+            - [x] Bicc (all conditions)
             - [x] Branch annul bit handling
             - [x] JMPL/RETL
             - [x] TA (trap always)
             - [x] Flush Windows trap (0x03)
         - Special registers:
-            - [x] RDY (read Y register)
-            - [x] WRY (write Y register)
-    - [x] Register windows
-        - [x] Windows implemented (64 windows to avoid overflow/underflow traps)
-        - [x] SAVE instruction
-        - [x] RESTORE instruction
-    - [x] Cycling
+            - [x] RDY, WRY (Y register)
+    - [x] Register windows (64 windows to avoid overflow/underflow traps)
     - [x] Integer Condition Codes (ICC)
-        - [x] Carry flag fix for subtraction (C=1 when borrow occurs)
     - [x] Testing
 4. Syscalls
-    - [x] exit (1)
-    - [x] read (3)
-    - [x] write (4)
-    - [x] close (6)
-    - [x] brk (17)
-    - [x] ioctl (54)
-    - [x] exit_group (188)
-    - [x] getrandom (360)
+    - File I/O:
+        - [x] open (5), openat (284)
+        - [x] read (3), write (4), close (6)
+        - [x] lseek, llseek (236)
+        - [x] stat64 (215), fstat64 (28), statx (360)
+        - [x] readlinkat (294)
+        - [x] dup2
+        - [x] mkdir (136)
+        - [x] chdir
+        - [x] fchmod (124)
+        - [x] chown32
+        - [x] utimensat (412)
+        - [x] sendfile64 (140)
+    - Directory operations:
+        - [x] getdents64 (154)
+        - [x] Directory open support (O_DIRECTORY)
+    - Memory:
+        - [x] brk (17)
+        - [x] mmap2 (56), munmap, mprotect
+    - Process:
+        - [x] exit (1), exit_group (188)
+        - [x] getpid, getppid
+        - [x] getuid32, getgid, getgid32, geteuid, getegid
+        - [x] setuid32, setgid32
+        - [x] umask (60)
+        - [x] set_tid_address (166)
+        - [x] set_robust_list (300)
+        - [x] prlimit64 (331)
+    - Other:
+        - [x] ioctl (54)
+        - [x] getrandom (347)
+        - [x] rt_sigaction (102), rt_sigprocmask (103)
     - [x] Syscall error handling (carry flag for errors)
     - [x] Testing
-5. Future work
+5. Dynamic linking
+    - [x] uClibc dynamic linker support
+    - [x] --sysroot option for guest filesystem
+    - [x] --passthrough option for host filesystem access
+6. Busybox utilities
+    - [x] gzip (compression/decompression)
+    - [x] tar (create/extract archives with directory traversal)
+7. Future work
     - [ ] Floating-point instructions (FPU)
     - [ ] Memory protection (segment permissions)
-    - [ ] More syscalls as needed (open, stat, mmap, etc.)
     - [ ] Alignment trap handling (currently raises ValueError)
     - [ ] Window overflow/underflow traps (currently avoided with 64 windows)
+    - [ ] More busybox utilities as needed
