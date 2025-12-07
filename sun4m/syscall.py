@@ -123,6 +123,8 @@ class Syscall:
                 self._syscall_getgid()  # getgid32 - same as getgid
             case 54:
                 self._syscall_ioctl()
+            case 60:
+                self._syscall_umask()
             case 56:
                 self._syscall_mmap2()  # SPARC 32-bit mmap2
             case 62:
@@ -147,8 +149,12 @@ class Syscall:
                 self._syscall_rt_sigprocmask()
             case 124:
                 self._syscall_fchmod()
+            case 136:
+                self._syscall_mkdir()
             case 140:
                 self._syscall_sendfile64()
+            case 154:
+                self._syscall_getdents64()
             case 188:
                 self._syscall_exit()  # exit_group - same as exit for single-threaded
             case 215:
@@ -280,6 +286,19 @@ class Syscall:
             # Shrink or same - just update and return
             self.cpu_state.brk = new_brk
             self._return_success(self.cpu_state.brk)
+
+    def _syscall_umask(self):
+        """
+        umask syscall implementation
+        Arguments:
+          %o0 (reg 8) = new mask
+        Returns:
+          %o0 = previous mask
+        """
+        new_mask = self.cpu_state.registers.read_register(8)
+        # Actually set the umask and return the old value
+        old_mask = os.umask(new_mask & 0o777)
+        self._return_success(old_mask)
 
     def _syscall_ioctl(self):
         """
@@ -447,6 +466,134 @@ class Syscall:
             )
             self._return_success(0)
 
+    def _syscall_getdents64(self):
+        """
+        getdents64 syscall implementation - read directory entries
+        Arguments:
+          %o0 (reg 8) = file descriptor (directory)
+          %o1 (reg 9) = buffer pointer
+          %o2 (reg 10) = buffer size
+        Returns:
+          %o0 = number of bytes read on success
+          %o0 = 0 on end of directory
+          %o0 = errno, carry set on error
+
+        struct linux_dirent64 {
+            ino64_t        d_ino;    /* 64-bit inode number */
+            off64_t        d_off;    /* 64-bit offset to next structure */
+            unsigned short d_reclen; /* Size of this dirent */
+            unsigned char  d_type;   /* File type */
+            char           d_name[]; /* Filename (null-terminated) */
+        };
+        """
+        fd = self.cpu_state.registers.read_register(8)
+        buf_ptr = self.cpu_state.registers.read_register(9)
+        buf_size = self.cpu_state.registers.read_register(10)
+
+        desc = self.cpu_state.fd_table.get(fd)
+        if desc is None:
+            self._return_error(EBADF)
+            return
+
+        if not desc.is_directory or desc.dir_fd is None:
+            self._return_error(EBADF)
+            return
+
+        # Use scandir with the host path
+        host_path = self.cpu_state.fd_table.translate_path(desc.path)
+
+        try:
+            # Get directory entries starting from the current position
+            entries = list(os.scandir(host_path))
+        except OSError as e:
+            self._return_error(e.errno if e.errno else EBADF)
+            return
+
+        # Track position in directory (using desc.position as entry index)
+        start_idx = desc.position
+
+        if start_idx >= len(entries):
+            # End of directory
+            self._return_success(0)
+            return
+
+        # d_type constants
+        DT_UNKNOWN = 0
+        DT_FIFO = 1
+        DT_CHR = 2
+        DT_DIR = 4
+        DT_BLK = 6
+        DT_REG = 8
+        DT_LNK = 10
+        DT_SOCK = 12
+
+        buf = bytearray()
+        entries_read = 0
+
+        for i in range(start_idx, len(entries)):
+            entry = entries[i]
+
+            # Get entry info
+            try:
+                st = entry.stat(follow_symlinks=False)
+                d_ino = st.st_ino
+                # Determine d_type from mode
+                if stat.S_ISDIR(st.st_mode):
+                    d_type = DT_DIR
+                elif stat.S_ISREG(st.st_mode):
+                    d_type = DT_REG
+                elif stat.S_ISLNK(st.st_mode):
+                    d_type = DT_LNK
+                elif stat.S_ISCHR(st.st_mode):
+                    d_type = DT_CHR
+                elif stat.S_ISBLK(st.st_mode):
+                    d_type = DT_BLK
+                elif stat.S_ISFIFO(st.st_mode):
+                    d_type = DT_FIFO
+                elif stat.S_ISSOCK(st.st_mode):
+                    d_type = DT_SOCK
+                else:
+                    d_type = DT_UNKNOWN
+            except OSError:
+                d_ino = 0
+                d_type = DT_UNKNOWN
+
+            name_bytes = entry.name.encode("utf-8") + b"\x00"
+
+            # Calculate record length (8-byte aligned)
+            # d_ino(8) + d_off(8) + d_reclen(2) + d_type(1) + name
+            base_len = 8 + 8 + 2 + 1 + len(name_bytes)
+            d_reclen = (base_len + 7) & ~7  # 8-byte align
+
+            # Check if this entry fits in the buffer
+            if len(buf) + d_reclen > buf_size:
+                if entries_read == 0:
+                    # Buffer too small for even one entry
+                    self._return_error(EINVAL)
+                    return
+                break
+
+            # d_off is the offset to the next entry (1-indexed position)
+            d_off = i + 1
+
+            # Pack the dirent64 structure (big-endian for SPARC)
+            entry_buf = bytearray(d_reclen)
+            struct.pack_into(">Q", entry_buf, 0, d_ino)  # d_ino
+            struct.pack_into(">Q", entry_buf, 8, d_off)  # d_off
+            struct.pack_into(">H", entry_buf, 16, d_reclen)  # d_reclen
+            entry_buf[18] = d_type  # d_type
+            entry_buf[19 : 19 + len(name_bytes)] = name_bytes  # d_name
+
+            buf.extend(entry_buf)
+            entries_read += 1
+            desc.position = i + 1
+
+        if len(buf) > 0:
+            self.cpu_state.memory.write(buf_ptr, bytes(buf))
+            self._return_success(len(buf))
+        else:
+            self._return_success(0)
+
     def _write_stat64(self, addr: int, st: os.stat_result) -> None:
         """Write a stat64 structure to guest memory.
 
@@ -531,6 +678,8 @@ class Syscall:
             if desc.is_special:
                 # For stdin/stdout/stderr, use os.fstat on actual fd
                 st = os.fstat(fd)
+            elif desc.is_directory and desc.dir_fd is not None:
+                st = os.fstat(desc.dir_fd)
             elif desc.file is not None:
                 st = os.fstat(desc.file.fileno())
             else:
@@ -627,6 +776,33 @@ class Syscall:
         """
         # Stub: just return success - we don't actually change ownership
         self._return_success(0)
+
+    def _syscall_mkdir(self):
+        """
+        mkdir syscall implementation
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+          %o1 (reg 9) = mode
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        pathname_ptr = self.cpu_state.registers.read_register(8)
+        mode = self.cpu_state.registers.read_register(9)
+
+        pathname = self._read_string(pathname_ptr)
+        host_path = self.cpu_state.fd_table.translate_path(pathname)
+
+        try:
+            os.mkdir(host_path, mode)
+            self._return_success(0)
+        except FileExistsError:
+            self._return_error(17)  # EEXIST
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)
 
     def _syscall_fchmod(self):
         """
@@ -1197,6 +1373,8 @@ class Syscall:
                     return
                 if desc.is_special:
                     st = os.fstat(dirfd)
+                elif desc.is_directory and desc.dir_fd is not None:
+                    st = os.fstat(desc.dir_fd)
                 elif desc.file is not None:
                     st = os.fstat(desc.file.fileno())
                 else:

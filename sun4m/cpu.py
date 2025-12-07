@@ -20,6 +20,8 @@ class FileDescriptor:
     position: int = 0
     flags: int = 0
     is_special: bool = False  # True for stdin/stdout/stderr
+    is_directory: bool = False  # True for directory file descriptors
+    dir_fd: int | None = None  # OS-level directory fd for getdents64
 
 
 @dataclass
@@ -53,8 +55,45 @@ class FileDescriptorTable:
 
     def open(self, path: str, flags: int, mode: int = 0o644) -> int:
         """Open a file and return its file descriptor, or negative errno on error."""
+        O_DIRECTORY = 0x10000
+
         host_path = self.translate_path(path)
 
+        # Check if this is a directory open
+        try:
+            is_dir = os.path.isdir(host_path)
+        except OSError:
+            is_dir = False
+
+        if is_dir or (flags & O_DIRECTORY):
+            # Opening a directory - use low-level os.open()
+            try:
+                os_flags = os.O_RDONLY
+                if hasattr(os, "O_DIRECTORY"):
+                    os_flags |= os.O_DIRECTORY
+                dir_fd = os.open(host_path, os_flags)
+            except FileNotFoundError:
+                return -2  # ENOENT
+            except NotADirectoryError:
+                return -20  # ENOTDIR
+            except PermissionError:
+                return -13  # EACCES
+            except OSError as e:
+                return -e.errno if e.errno else -5  # EIO
+
+            fd = self._next_fd
+            self._next_fd += 1
+            self._table[fd] = FileDescriptor(
+                fd=fd,
+                path=path,
+                file=None,
+                flags=flags,
+                is_directory=True,
+                dir_fd=dir_fd,
+            )
+            return fd
+
+        # Regular file open
         # Convert Linux O_* flags to Python mode string
         # Linux flags: O_RDONLY=0, O_WRONLY=1, O_RDWR=2, O_CREAT=0x40, O_TRUNC=0x200, O_APPEND=0x400
         access_mode = flags & 3
@@ -97,7 +136,9 @@ class FileDescriptorTable:
         if desc.is_special:
             # Don't actually close stdin/stdout/stderr
             return 0
-        if desc.file:
+        if desc.is_directory and desc.dir_fd is not None:
+            os.close(desc.dir_fd)
+        elif desc.file:
             desc.file.close()
         del self._table[fd]
         return 0
