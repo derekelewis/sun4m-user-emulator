@@ -7,10 +7,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sun4m.cpu import CpuState
 
+# SPARC/Linux errno values
+EBADF = 9  # Bad file descriptor
+ENOTTY = 25  # Not a typewriter (inappropriate ioctl for device)
+ENOSYS = 38  # Function not implemented
+
+# Page size for memory alignment
+PAGE_SIZE = 4096
+
 
 class Syscall:
-    # Track program break for brk syscall (class variable shared across instances)
-    _brk: int = 0
 
     def __init__(self, cpu_state: CpuState):
         self.cpu_state = cpu_state
@@ -79,8 +85,7 @@ class Syscall:
                 self.cpu_state.memory.write(buf_ptr, data)
             self._return_success(len(data))
         else:
-            # Unsupported fd - EBADF (9)
-            self._return_error(9)
+            self._return_error(EBADF)
 
     def _syscall_close(self):
         """
@@ -119,8 +124,7 @@ class Syscall:
             sys.stderr.buffer.flush()
             self._return_success(length)
         else:
-            # Unsupported fd - EBADF (9)
-            self._return_error(9)
+            self._return_error(EBADF)
 
     def _syscall_brk(self):
         """
@@ -133,24 +137,24 @@ class Syscall:
         new_brk = self.cpu_state.registers.read_register(8)
 
         # Initialize brk to a reasonable heap start if not set
-        if Syscall._brk == 0:
+        if self.cpu_state.brk == 0:
             # Set initial break to 0x100000 (1MB) - above typical code/data
-            Syscall._brk = 0x100000
+            self.cpu_state.brk = 0x100000
             # Create initial heap segment
-            self.cpu_state.memory.add_segment(Syscall._brk, 0x100000)
+            self.cpu_state.memory.add_segment(self.cpu_state.brk, 0x100000)
 
         if new_brk == 0:
             # Query current break
-            self._return_success(Syscall._brk)
-        elif new_brk > Syscall._brk:
+            self._return_success(self.cpu_state.brk)
+        elif new_brk > self.cpu_state.brk:
             # Extend the heap - for simplicity, we just update the break
             # In a real implementation, we'd need to extend the memory segment
-            Syscall._brk = new_brk
-            self._return_success(Syscall._brk)
+            self.cpu_state.brk = new_brk
+            self._return_success(self.cpu_state.brk)
         else:
             # Shrink or same - just update and return
-            Syscall._brk = new_brk
-            self._return_success(Syscall._brk)
+            self.cpu_state.brk = new_brk
+            self._return_success(self.cpu_state.brk)
 
     def _syscall_ioctl(self):
         """
@@ -171,8 +175,7 @@ class Syscall:
             # This makes programs like gzip behave correctly when run interactively
             self._return_success(0)
         else:
-            # Not a tty - ENOTTY (25 on SPARC)
-            self._return_error(25)
+            self._return_error(ENOTTY)
 
     def _syscall_getrandom(self):
         """

@@ -7,10 +7,11 @@ TODOs
     - [x] Testing
 2. ELF
     - [x] ELF file loading
+    - [x] Program argument passing (argc/argv on stack)
     - [x] Testing
 3. CPU operations
     - [x] Registers
-    - [~] Decoding
+    - [x] Decoding
         - [x] Correct routing to CALL, Format2, and Format3
     - [x] Instructions
         - [x] CALL
@@ -18,30 +19,72 @@ TODOs
         - [x] RESTORE
         - [x] NOP
         - [x] SETHI
-        - [x] OR
-        - [x] CLR
-        - [x] TA
-            - Created new TrapInstruction class since format of trap instructions is different from Format3Instruction
-        - [x] JMPL/RETL
-        - [x] ST
-        - [x] LD
-        - [x] Bicc (b/ba, bne, bl, be, ble, bg, bge, bgu, bleu, bcc, bcs, bpos, bneg, bvc, bvs)
-        - [x] ADD
-        - [x] ADDCC
-        - [x] SUB
-        - [x] SUBCC (cmp)
-        - [x] SRA
-        - [x] SMUL
-        - [x] SDIV
-        - [x] WRY
+        - Arithmetic/Logical:
+            - [x] ADD
+            - [x] ADDCC
+            - [x] ADDX (add with carry)
+            - [x] SUB
+            - [x] SUBCC (cmp)
+            - [x] SUBX (subtract with carry)
+            - [x] TSUBcc (tagged subtract)
+            - [x] AND
+            - [x] ANDCC
+            - [x] ANDN (and not)
+            - [x] OR
+            - [x] ORCC
+            - [x] XOR
+            - [x] XNOR
+            - [x] SLL (shift left logical)
+            - [x] SRL (shift right logical)
+            - [x] SRA (shift right arithmetic)
+            - [x] SMUL (signed multiply)
+            - [x] UMUL (unsigned multiply)
+            - [x] SDIV (signed divide)
+            - [x] UDIV (unsigned divide)
+        - Load/Store:
+            - [x] LD (load word)
+            - [x] LDUB (load unsigned byte)
+            - [x] LDSB (load signed byte)
+            - [x] LDUH (load unsigned halfword)
+            - [x] LDSH (load signed halfword)
+            - [x] LDD (load doubleword)
+            - [x] ST (store word)
+            - [x] STB (store byte)
+            - [x] STH (store halfword)
+            - [x] STD (store doubleword)
+            - [x] LDSTUB (atomic load-store unsigned byte)
+            - [x] SWAP (atomic swap)
+        - Control:
+            - [x] Bicc (all conditions: bn, ba, bne, be, bg, ble, bge, bl, bgu, bleu, bcc, bcs, bpos, bneg, bvc, bvs)
+            - [x] Branch annul bit handling
+            - [x] JMPL/RETL
+            - [x] TA (trap always)
+            - [x] Flush Windows trap (0x03)
+        - Special registers:
+            - [x] RDY (read Y register)
+            - [x] WRY (write Y register)
     - [x] Register windows
-        - [x] Windows implemented
-        - [x] SAVE Instruction
-        - [x] RESTORE Instruction
+        - [x] Windows implemented (64 windows to avoid overflow/underflow traps)
+        - [x] SAVE instruction
+        - [x] RESTORE instruction
     - [x] Cycling
     - [x] Integer Condition Codes (ICC)
-    - [~] Testing
+        - [x] Carry flag fix for subtraction (C=1 when borrow occurs)
+    - [x] Testing
 4. Syscalls
-    - [x] Write
-    - [x] Exit
-    - [~] Testing
+    - [x] exit (1)
+    - [x] read (3)
+    - [x] write (4)
+    - [x] close (6)
+    - [x] brk (17)
+    - [x] ioctl (54)
+    - [x] exit_group (188)
+    - [x] getrandom (360)
+    - [x] Syscall error handling (carry flag for errors)
+    - [x] Testing
+5. Future work
+    - [ ] Floating-point instructions (FPU)
+    - [ ] Memory protection (segment permissions)
+    - [ ] More syscalls as needed (open, stat, mmap, etc.)
+    - [ ] Alignment trap handling (currently raises ValueError)
+    - [ ] Window overflow/underflow traps (currently avoided with 64 windows)

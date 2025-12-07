@@ -1,3 +1,5 @@
+import sys
+
 from sun4m.register import RegisterFile
 from sun4m.memory import SystemMemory
 from sun4m.decoder import decode
@@ -65,6 +67,8 @@ class CpuState:
         self.memory: SystemMemory = memory if memory else SystemMemory()
         # Flag set by branch instructions to annul the delay slot
         self.annul_next: bool = False
+        # Program break address for brk syscall (heap management)
+        self.brk: int = 0
 
     def step(self):
         """
@@ -86,7 +90,6 @@ class CpuState:
         inst_bytes = self.memory.read(self.pc, 4)
         inst_word = int.from_bytes(inst_bytes, "big")
         if self.trace:
-            import sys
             print(f"PC={self.pc:#010x} inst: {hex(inst_word)}", file=sys.stderr)
 
         instruction = decode(inst_word)

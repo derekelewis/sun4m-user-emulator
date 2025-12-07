@@ -87,8 +87,7 @@ class TestSyscallBrk(unittest.TestCase):
     def setUp(self):
         self.cpu_state = CpuState()
         self.syscall = Syscall(self.cpu_state)
-        # Reset brk to 0 for each test
-        Syscall._brk = 0
+        # brk is now stored in cpu_state, no need to reset class variable
 
     def test_brk_query_initial(self):
         """Test querying brk when not initialized."""
@@ -113,7 +112,7 @@ class TestSyscallBrk(unittest.TestCase):
 
         # Should return new break
         self.assertEqual(self.cpu_state.registers.read_register(8), 0x200000)
-        self.assertEqual(Syscall._brk, 0x200000)
+        self.assertEqual(self.cpu_state.brk, 0x200000)
 
     def test_brk_shrink(self):
         """Test shrinking the break."""
@@ -131,7 +130,7 @@ class TestSyscallBrk(unittest.TestCase):
 
         # Should return new (smaller) break
         self.assertEqual(self.cpu_state.registers.read_register(8), 0x150000)
-        self.assertEqual(Syscall._brk, 0x150000)
+        self.assertEqual(self.cpu_state.brk, 0x150000)
 
 
 class TestSyscallIoctl(unittest.TestCase):

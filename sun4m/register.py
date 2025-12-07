@@ -6,6 +6,13 @@ class Window:
 
 
 class RegisterFile:
+    """SPARC register file with overlapping register windows.
+
+    The default of 64 windows is intentionally larger than real hardware
+    (typically 7-32 windows) to avoid implementing window overflow/underflow
+    traps. With 64 windows, deeply nested call chains won't exhaust the
+    window pool, eliminating the need to spill/fill registers to/from memory.
+    """
 
     def __init__(self, n_windows: int = 64):
         self.n_windows: int = n_windows

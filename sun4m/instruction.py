@@ -236,6 +236,13 @@ class Format3Instruction(Instruction):
                     value |= 0xFFFF0000
                 cpu_state.registers.write_register(self.rd, value)
             case 0b000011:  # LDD (load doubleword)
+                # SPARC V8 requires 8-byte alignment and even rd
+                if memory_address & 0x7:
+                    raise ValueError(
+                        f"LDD: address {memory_address:#x} not 8-byte aligned"
+                    )
+                if self.rd & 0x1:
+                    raise ValueError(f"LDD: rd={self.rd} must be even")
                 # Load 8 bytes into rd and rd+1
                 load_high = cpu_state.memory.read(memory_address, 4)
                 load_low = cpu_state.memory.read(memory_address + 4, 4)
@@ -260,6 +267,13 @@ class Format3Instruction(Instruction):
                     memory_address, store_val.to_bytes(2, byteorder="big")
                 )
             case 0b000111:  # STD (store doubleword)
+                # SPARC V8 requires 8-byte alignment and even rd
+                if memory_address & 0x7:
+                    raise ValueError(
+                        f"STD: address {memory_address:#x} not 8-byte aligned"
+                    )
+                if self.rd & 0x1:
+                    raise ValueError(f"STD: rd={self.rd} must be even")
                 # Store from rd and rd+1 to memory
                 high_word = cpu_state.registers.read_register(self.rd) & 0xFFFFFFFF
                 low_word = cpu_state.registers.read_register(self.rd + 1) & 0xFFFFFFFF
