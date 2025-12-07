@@ -156,10 +156,15 @@ class Syscall:
         """
         fd = self.cpu_state.registers.read_register(8)
         request = self.cpu_state.registers.read_register(9)
-        # For TIOCGWINSZ (get window size) and similar, return -ENOTTY
-        # This tells the program it's not a tty
-        # ENOTTY = 25 on SPARC
-        self.cpu_state.registers.write_register(8, (-25) & 0xFFFFFFFF)
+
+        # Check if fd maps to a real host terminal
+        if fd in (0, 1, 2) and os.isatty(fd):
+            # For terminal ioctls, return 0 (success) to indicate it's a tty
+            # This makes programs like gzip behave correctly when run interactively
+            self.cpu_state.registers.write_register(8, 0)
+        else:
+            # Not a tty - return -ENOTTY (25 on SPARC)
+            self.cpu_state.registers.write_register(8, (-25) & 0xFFFFFFFF)
 
     def _syscall_getrandom(self):
         """
