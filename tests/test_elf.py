@@ -147,7 +147,7 @@ def build_minimal_elf(
     # Program headers
     program_headers = b""
     data_offset = e_phoff + e_phentsize * e_phnum
-    data_sections = []
+    data_sections: list[bytes] = []
 
     for seg in segments:
         seg_type = seg.get("type", PT_LOAD)
