@@ -32,14 +32,18 @@
 - For PRs, include: brief summary of behavior change, tests run (`python -m unittest`, `make -C bin all` if touched), and any TODO follow-ups. Link issues when applicable; screenshots are unnecessary unless documenting CLI output.
 - Keep changes focused; split emulator core updates from sample binary or docs edits.
 
-## Dynamic Library Testing
+## Dynamic Library Support
+- The emulator supports dynamically linked SPARC binaries using uClibc's dynamic linker (`ld-uClibc.so.0`).
+- Use `--sysroot` to specify the path to a buildroot `output/target` directory containing uClibc libraries:
+  ```bash
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target ./bin/gzip_dynamic --help
+  ```
 - `bin/gzip_dynamic` is a dynamically linked SPARC binary built against uClibc.
 - Dependencies: `libc.so.0` and `/lib/ld-uClibc.so.0` (the uClibc dynamic linker).
-- Use QEMU as a reference implementation for testing behavior:
+- Use QEMU as a reference implementation for comparing behavior:
+  ```bash
+  QEMU_LD_PREFIX=~/work/repos/third-party/buildroot/output/target qemu-sparc ./bin/gzip_dynamic --help
   ```
-  QEMU_LD_PREFIX=~/work/repos/third-party/buildroot/output/target qemu-sparc ./bin/gzip_dynamic
-  ```
-  Set `QEMU_LD_PREFIX` to a buildroot `output/target` directory containing the uClibc libraries.
 
 ## Architecture Overview
 - `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
@@ -47,4 +51,5 @@
 - Register window overlap: Each `Window` stores only `i` (ins) and `l` (locals)—there is no separate outs array. The SPARC overlap (caller's outs = callee's ins) is achieved by resolving outs at CWP via `windows[cwp - 1].i`. When SAVE decrements CWP, the same physical storage that was "outs" becomes "ins" in the new window. This is correct per SPARC V8 Figure 4-1.
 - New instructions usually require decoder wiring plus an `execute` method that reads/writes through `CpuState` and `SystemMemory`.
 - SPARC CALL semantics: store the call-site PC (not PC+4) into `%o7`; `retl` adds 8 to resume after the delay slot.
-- `elf.py` provides a minimal loader for 32-bit big-endian SPARC ELFs; it maps PT_LOAD segments into `SystemMemory` at their `p_vaddr`, copies file bytes up to `p_filesz`, leaves the remainder zeroed, and returns the entry point. It ignores `p_flags/p_align/p_paddr` because protection and alignment aren’t modelled yet.
+- `elf.py` provides a loader for 32-bit big-endian SPARC ELFs supporting both static and dynamic executables. It maps PT_LOAD segments, parses PT_INTERP for the dynamic linker path, processes R_SPARC_RELATIVE relocations for PIE/shared objects, and returns `ElfInfo` with entry point, program header addresses, and interpreter path.
+- For dynamic executables, `machine.py` loads the interpreter at a separate base address (0x40000000), sets up the auxiliary vector (auxv) with AT_PHDR, AT_ENTRY, AT_RANDOM, etc., and transfers control to the dynamic linker.

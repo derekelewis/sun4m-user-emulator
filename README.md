@@ -27,8 +27,11 @@ tests/      Unit test suites
 ## Usage
 
 ```bash
-# Run the emulator with the sample binary
-python -m sun4m
+# Run the emulator with a static binary
+python -m sun4m ./bin/gzip --help
+
+# Run a dynamically linked binary (requires sysroot with uClibc)
+python -m sun4m --sysroot /path/to/buildroot/output/target ./bin/gzip_dynamic --help
 
 # Run tests
 python -m unittest
@@ -41,8 +44,9 @@ make -C bin clean all
 
 - `Machine` owns `SystemMemory` segments and a `CpuState`; execute with `machine.cpu.step()` or `run()`
 - Register windows follow SPARC V8 semantics—each window stores ins and locals; outs resolve via CWP overlap
-- ELF loader maps PT_LOAD segments to memory at their virtual addresses
-- Syscalls (write, exit) are handled via trap instructions
+- ELF loader supports both static and dynamically linked executables, including PT_INTERP parsing and R_SPARC_RELATIVE relocations
+- Dynamic linking works by loading the uClibc interpreter and setting up the auxiliary vector (auxv)
+- Syscalls include file I/O (open, read, write, close, lseek, stat), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, etc.)
 
 ## License
 
