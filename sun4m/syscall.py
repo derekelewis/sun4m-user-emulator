@@ -64,6 +64,16 @@ TCSETSF = 0x8024540B
 TIOCGWINSZ = 0x40087468
 TIOCSWINSZ = 0x80087467
 
+# Default termios flags for a typical cooked mode terminal
+# These match standard Linux terminal defaults
+TERMIOS_DEFAULT_IFLAG = 0x2D02  # ICRNL | IXON | IXOFF | IMAXBEL
+TERMIOS_DEFAULT_OFLAG = 0x0005  # OPOST | ONLCR
+TERMIOS_DEFAULT_CFLAG = 0x00BF  # CS8 | CREAD | CLOCAL
+TERMIOS_DEFAULT_LFLAG = 0x8A3B  # ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHOCTL | ECHOKE | IEXTEN
+
+# Termios c_lflag constants
+ICANON = 0x2  # Canonical mode (line-buffered input)
+
 # mmap flags
 MAP_SHARED = 0x01
 MAP_PRIVATE = 0x02
@@ -98,6 +108,23 @@ class Syscall:
         """Return error from syscall: set carry, set %o0 to positive errno."""
         self.cpu_state.registers.write_register(8, errno & 0xFFFFFFFF)
         self.cpu_state.icc.c = True
+
+    def _get_host_fd(self, guest_fd: int) -> int | None:
+        """Map a guest file descriptor to its corresponding host file descriptor.
+
+        Returns the host fd, or None if the guest fd is invalid or has no
+        host equivalent (e.g., a closed or unsupported descriptor).
+        """
+        desc = self.cpu_state.fd_table.get(guest_fd)
+        if desc is None:
+            return None
+        if desc.is_special:
+            return guest_fd  # stdin/stdout/stderr map directly
+        if desc.file is not None:
+            return desc.file.fileno()
+        if desc.is_directory and desc.dir_fd is not None:
+            return desc.dir_fd
+        return None
 
     def handle(self):
         # Get syscall number from %g1
@@ -393,16 +420,11 @@ class Syscall:
 
     def _write_default_sparc_termios(self, addr: int) -> None:
         """Write default termios attributes for a typical terminal."""
-        # Default flags for a typical cooked mode terminal
-        iflag = 0x2D02  # ICRNL | IXON | IXOFF | IMAXBEL
-        oflag = 0x0005  # OPOST | ONLCR
-        cflag = 0x00BF  # CS8 | CREAD | CLOCAL
-        lflag = 0x8A3B  # ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHOCTL | ECHOKE | IEXTEN
         buf = bytearray(36)
-        struct.pack_into(">I", buf, 0, iflag)
-        struct.pack_into(">I", buf, 4, oflag)
-        struct.pack_into(">I", buf, 8, cflag)
-        struct.pack_into(">I", buf, 12, lflag)
+        struct.pack_into(">I", buf, 0, TERMIOS_DEFAULT_IFLAG)
+        struct.pack_into(">I", buf, 4, TERMIOS_DEFAULT_OFLAG)
+        struct.pack_into(">I", buf, 8, TERMIOS_DEFAULT_CFLAG)
+        struct.pack_into(">I", buf, 12, TERMIOS_DEFAULT_LFLAG)
         buf[16] = 0  # c_line
         # Default control characters
         cc_defaults = [
@@ -475,7 +497,6 @@ class Syscall:
                 host_cc[i] = sparc_cc[i]
 
         # Check if we're in non-canonical mode (ICANON not set)
-        ICANON = 0x2
         if not (lflag & ICANON):
             # Non-canonical mode: SPARC index 4 is VMIN, index 5 is VTIME
             if len(sparc_cc) > 4:
@@ -842,18 +863,9 @@ class Syscall:
             if fd < 0:
                 continue
 
-            # Map guest fd to host fd for select
-            host_fd = fd  # For special fds (0,1,2), they map directly
-            desc = self.cpu_state.fd_table.get(fd)
-            if desc is not None:
-                if desc.is_special:
-                    host_fd = fd
-                elif desc.file is not None:
-                    host_fd = desc.file.fileno()
-                elif desc.is_directory and desc.dir_fd is not None:
-                    host_fd = desc.dir_fd
-                else:
-                    continue
+            host_fd = self._get_host_fd(fd)
+            if host_fd is None:
+                continue
 
             fd_to_idx[host_fd] = i
 
@@ -889,22 +901,9 @@ class Syscall:
                 continue
 
             # Find the host fd for this guest fd
-            desc = self.cpu_state.fd_table.get(fd)
-            if desc is None:
+            host_fd = self._get_host_fd(fd)
+            if host_fd is None:
                 # Invalid fd - set POLLNVAL
-                self.cpu_state.memory.write(
-                    fds_ptr + i * 8 + 6, struct.pack(">h", POLLNVAL)
-                )
-                count += 1
-                continue
-
-            if desc.is_special:
-                host_fd = fd
-            elif desc.file is not None:
-                host_fd = desc.file.fileno()
-            elif desc.is_directory and desc.dir_fd is not None:
-                host_fd = desc.dir_fd
-            else:
                 self.cpu_state.memory.write(
                     fds_ptr + i * 8 + 6, struct.pack(">h", POLLNVAL)
                 )

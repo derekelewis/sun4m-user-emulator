@@ -1669,5 +1669,125 @@ class TestSyscallTerminalIoctl(unittest.TestCase):
         self.assertFalse(self.cpu_state.icc.c)
 
 
+class TestSyscallTermiosNonCanonical(unittest.TestCase):
+    """Tests for SPARC to host termios c_cc translation in non-canonical mode.
+
+    SPARC and x86_64 have different c_cc indices for VMIN and VTIME:
+    - SPARC: VMIN=4, VTIME=5 (shared with VEOF/VEOL in canonical mode)
+    - x86_64: VMIN=6, VTIME=5, VEOF=4, VEOL=11
+
+    These tests verify the translation works correctly for raw/non-canonical mode
+    where vi and other interactive programs need VMIN/VTIME set properly.
+    """
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_read_sparc_termios_noncanonical_vmin_vtime(self):
+        """Test that VMIN/VTIME are correctly translated from SPARC to host in non-canonical mode."""
+        import struct
+
+        # Create a SPARC termios structure with ICANON unset (non-canonical mode)
+        # SPARC termios: iflag(4) + oflag(4) + cflag(4) + lflag(4) + c_line(1) + c_cc(19)
+        buf = bytearray(36)
+
+        # Set flags - importantly, ICANON (0x2) is NOT set in lflag
+        iflag = 0x0000  # No input processing
+        oflag = 0x0000  # No output processing
+        cflag = 0x00BF  # CS8 | CREAD | CLOCAL
+        lflag = 0x0000  # ICANON not set - this is non-canonical mode!
+
+        struct.pack_into(">I", buf, 0, iflag)
+        struct.pack_into(">I", buf, 4, oflag)
+        struct.pack_into(">I", buf, 8, cflag)
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+
+        # Set SPARC c_cc values
+        # In non-canonical mode, SPARC index 4 is VMIN, index 5 is VTIME
+        sparc_vmin = 1   # Read at least 1 character
+        sparc_vtime = 0  # No timeout
+        buf[17 + 4] = sparc_vmin   # SPARC VMIN at index 4
+        buf[17 + 5] = sparc_vtime  # SPARC VTIME at index 5
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        # Call _read_sparc_termios
+        result = self.syscall._read_sparc_termios(0x1000)
+
+        # Result format: [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
+        host_cc = result[6]
+
+        # In x86_64, VMIN is at index 6, VTIME is at index 5
+        self.assertEqual(host_cc[6], sparc_vmin, "VMIN should be at x86_64 index 6")
+        self.assertEqual(host_cc[5], sparc_vtime, "VTIME should be at x86_64 index 5")
+
+        # VEOF should get a default value in non-canonical mode
+        self.assertEqual(host_cc[4], 0x04, "VEOF should be default Ctrl-D in non-canonical mode")
+
+    def test_read_sparc_termios_canonical_veof_veol(self):
+        """Test that VEOF/VEOL are correctly translated in canonical mode."""
+        import struct
+
+        buf = bytearray(36)
+
+        # Set ICANON in lflag - canonical mode
+        lflag = 0x0002  # ICANON is set
+
+        struct.pack_into(">I", buf, 0, 0)      # iflag
+        struct.pack_into(">I", buf, 4, 0)      # oflag
+        struct.pack_into(">I", buf, 8, 0x00BF) # cflag
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+
+        # In canonical mode, SPARC index 4 is VEOF, index 5 is VEOL
+        sparc_veof = 0x04  # Ctrl-D
+        sparc_veol = 0x00  # No VEOL
+        buf[17 + 4] = sparc_veof
+        buf[17 + 5] = sparc_veol
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        result = self.syscall._read_sparc_termios(0x1000)
+        host_cc = result[6]
+
+        # In x86_64, VEOF is at index 4, VEOL is at index 11
+        self.assertEqual(host_cc[4], sparc_veof, "VEOF should be at x86_64 index 4")
+        self.assertEqual(host_cc[11], sparc_veol, "VEOL should be at x86_64 index 11")
+
+    def test_termios_roundtrip_noncanonical(self):
+        """Test that writing and reading termios in non-canonical mode preserves key values."""
+        import struct
+
+        # First write default termios
+        self.syscall._write_default_sparc_termios(0x1000)
+
+        # Read it back
+        termios_data = self.cpu_state.memory.read(0x1000, 36)
+
+        # Modify to non-canonical mode with specific VMIN/VTIME
+        buf = bytearray(termios_data)
+        # Clear ICANON in lflag (offset 12)
+        lflag = struct.unpack(">I", buf[12:16])[0]
+        lflag &= ~0x2  # Clear ICANON
+        struct.pack_into(">I", buf, 12, lflag)
+
+        # Set VMIN=1, VTIME=0 at SPARC indices
+        buf[17 + 4] = 1  # VMIN
+        buf[17 + 5] = 0  # VTIME
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        # Read and convert to host format
+        result = self.syscall._read_sparc_termios(0x1000)
+        host_cc = result[6]
+
+        # Verify VMIN/VTIME are at correct x86_64 indices
+        self.assertEqual(host_cc[6], 1, "VMIN=1 should be at x86_64 index 6")
+        self.assertEqual(host_cc[5], 0, "VTIME=0 should be at x86_64 index 5")
+
+
 if __name__ == "__main__":
     unittest.main()
