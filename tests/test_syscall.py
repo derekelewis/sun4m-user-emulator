@@ -1603,6 +1603,29 @@ class TestSyscallTerminalIoctl(unittest.TestCase):
         self.assertGreater(rows, 0)
         self.assertGreater(cols, 0)
 
+    def test_tiocgwinsz_returns_reasonable_size(self):
+        """Test TIOCGWINSZ returns reasonable window dimensions.
+
+        This test catches endianness bugs where byte-swapped values would
+        produce impossibly large dimensions (e.g., 6144x20480 instead of 24x80).
+        """
+        TIOCGWINSZ = 0x40087468
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCGWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        winsize_data = self.cpu_state.memory.read(0x1000, 8)
+        import struct
+        rows, cols, xpix, ypix = struct.unpack(">HHHH", winsize_data)
+
+        # Reasonable terminal sizes: 1-500 rows, 1-1000 cols
+        # Byte-swapped values would be much larger (e.g., 0x1800=6144 for 24)
+        self.assertLessEqual(rows, 500, f"rows={rows} suggests endianness bug")
+        self.assertLessEqual(cols, 1000, f"cols={cols} suggests endianness bug")
+
     def test_tcsetsw_succeeds(self):
         """Test TCSETSW ioctl returns success."""
         TCSETSW = 0x8024540A

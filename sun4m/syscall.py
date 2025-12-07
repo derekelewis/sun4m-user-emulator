@@ -404,12 +404,17 @@ class Syscall:
                 if os.isatty(fd):
                     try:
                         result = fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\x00" * 8)
-                        self.cpu_state.memory.write(arg, result)
+                        # Convert from host byte order (LE on x86_64) to SPARC (BE)
+                        rows, cols, xpix, ypix = struct.unpack("<HHHH", result)
+                        logger.debug("TIOCGWINSZ: rows=%d cols=%d", rows, cols)
+                        ws = struct.pack(">HHHH", rows, cols, xpix, ypix)
+                        self.cpu_state.memory.write(arg, ws)
                         self._return_success(0)
                         return
                     except OSError as e:
                         logger.debug("TIOCGWINSZ ioctl failed: %s", e)
                 # Return default size
+                logger.debug("TIOCGWINSZ: using default 24x80")
                 ws = struct.pack(">HHHH", 24, 80, 0, 0)
                 self.cpu_state.memory.write(arg, ws)
                 self._return_success(0)

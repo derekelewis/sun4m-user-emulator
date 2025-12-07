@@ -2,7 +2,6 @@ import unittest
 import subprocess
 import sys
 import os
-import tempfile
 
 
 class TestMainProfileArgument(unittest.TestCase):
