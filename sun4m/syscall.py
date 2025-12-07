@@ -124,10 +124,10 @@ class Syscall:
                 self._syscall_lseek()
             case 28:
                 self._syscall_fstat64()
-            case 33:
-                self._syscall_access()
             case 32:
                 self._syscall_fchown()
+            case 33:
+                self._syscall_access()
             case 35:
                 self._syscall_chown()  # chown32
             case 38:
@@ -366,7 +366,7 @@ class Syscall:
                         elif request == TCSETSF:
                             when = termios.TCSAFLUSH
                         termios.tcsetattr(fd, when, attrs)
-                    except (termios.error, Exception):
+                    except (termios.error, OSError, IndexError, struct.error):
                         pass  # Silently ignore errors, vi will still work
                 self._return_success(0)
             elif request == TIOCGWINSZ:
@@ -873,7 +873,7 @@ class Syscall:
             readable, writable, exceptional = select.select(
                 read_fds, write_fds, except_fds, timeout_sec
             )
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError):
             self._return_error(EBADF)
             return
 

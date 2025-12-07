@@ -1608,6 +1608,66 @@ class TestSyscallTerminalIoctl(unittest.TestCase):
         self.assertGreater(rows, 0)
         self.assertGreater(cols, 0)
 
+    def test_tcsetsw_succeeds(self):
+        """Test TCSETSW ioctl returns success."""
+        TCSETSW = 0x8024540A
+        import struct
+        termios_buf = bytearray(36)
+        struct.pack_into(">I", termios_buf, 0, 0x2D02)  # iflag
+        struct.pack_into(">I", termios_buf, 4, 0x0005)  # oflag
+        struct.pack_into(">I", termios_buf, 8, 0x00BF)  # cflag
+        struct.pack_into(">I", termios_buf, 12, 0x8A3B)  # lflag
+        self.cpu_state.memory.write(0x1000, bytes(termios_buf))
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, TCSETSW)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tcsetsf_succeeds(self):
+        """Test TCSETSF ioctl returns success."""
+        TCSETSF = 0x8024540B
+        import struct
+        termios_buf = bytearray(36)
+        struct.pack_into(">I", termios_buf, 0, 0x2D02)  # iflag
+        struct.pack_into(">I", termios_buf, 4, 0x0005)  # oflag
+        struct.pack_into(">I", termios_buf, 8, 0x00BF)  # cflag
+        struct.pack_into(">I", termios_buf, 12, 0x8A3B)  # lflag
+        self.cpu_state.memory.write(0x1000, bytes(termios_buf))
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, TCSETSF)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tiocswinsz_succeeds(self):
+        """Test TIOCSWINSZ ioctl returns success."""
+        TIOCSWINSZ = 0x80087467
+        import struct
+        # Write a winsize structure: rows=25, cols=80, xpixel=0, ypixel=0
+        winsize = struct.pack(">HHHH", 25, 80, 0, 0)
+        self.cpu_state.memory.write(0x1000, winsize)
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCSWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
 
 if __name__ == "__main__":
     unittest.main()
