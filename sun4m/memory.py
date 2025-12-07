@@ -46,7 +46,7 @@ class SystemMemory:
             offset = addr - segment.start
             return segment.buffer[offset : offset + size]
         else:
-            raise MemoryError(f"invalid or cross-segment read at {addr:#010x}")
+            raise MemoryError("invalid or cross-segment read")
 
     def write(self, addr: int, input: bytes) -> None:
         """Write bytes to memory"""
@@ -57,4 +57,4 @@ class SystemMemory:
             offset = addr - segment.start
             segment.buffer[offset : offset + len(input)] = input
         else:
-            raise MemoryError(f"invalid or cross-segment write at {addr:#010x}")
+            raise MemoryError("invalid or cross-segment write")

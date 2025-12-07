@@ -1,5 +1,3 @@
-import sys
-
 from sun4m.register import RegisterFile
 from sun4m.memory import SystemMemory
 from sun4m.decoder import decode
@@ -31,8 +29,8 @@ class ICC:
 
         if is_sub:
             # For subtraction A - B:
-            # C: set if there WAS a borrow (i.e., A < B as unsigned)
-            self.c = (op1 & 0xFFFFFFFF) < (op2 & 0xFFFFFFFF)
+            # C: set if there was NO borrow (i.e., A >= B as unsigned)
+            self.c = (op1 & 0xFFFFFFFF) >= (op2 & 0xFFFFFFFF)
             # V: overflow if signs of operands differ and sign of result
             # differs from sign of first operand
             op1_sign = bool(op1 & 0x80000000)
@@ -65,10 +63,6 @@ class CpuState:
         # Memory is shared with Machine; fall back to a private instance for
         # standalone CpuState usage in tests.
         self.memory: SystemMemory = memory if memory else SystemMemory()
-        # Flag set by branch instructions to annul the delay slot
-        self.annul_next: bool = False
-        # Program break address for brk syscall (heap management)
-        self.brk: int = 0
 
     def step(self):
         """
@@ -90,20 +84,14 @@ class CpuState:
         inst_bytes = self.memory.read(self.pc, 4)
         inst_word = int.from_bytes(inst_bytes, "big")
         if self.trace:
-            print(f"PC={self.pc:#010x} inst: {hex(inst_word)}", file=sys.stderr)
+            print(f"fetch_word: inst: {hex(inst_word)}")
 
         instruction = decode(inst_word)
         instruction.execute(self)
 
         # Advance pipeline: execute delay-slot semantics.
-        # If annul_next is set, skip the delay slot entirely.
-        if self.annul_next:
-            self.annul_next = False
-            self.pc = self.npc & 0xFFFFFFFF
-            self.npc = (self.npc + 4) & 0xFFFFFFFF
-        else:
-            self.pc = current_npc & 0xFFFFFFFF
-            self.npc = self.npc & 0xFFFFFFFF
+        self.pc = current_npc & 0xFFFFFFFF
+        self.npc = self.npc & 0xFFFFFFFF
         return instruction
 
     def run(self, max_steps: int | None = None) -> None:
