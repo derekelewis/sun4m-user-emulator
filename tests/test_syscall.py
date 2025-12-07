@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import io
+import os
 import sys
+import tempfile
 
 from sun4m.cpu import CpuState
 from sun4m.syscall import Syscall
@@ -260,6 +262,413 @@ class TestSyscallUnimplemented(unittest.TestCase):
 
         self.assertIn("999", str(context.exception))
         self.assertIn("not implemented", str(context.exception))
+
+
+class TestSyscallOpenClose(unittest.TestCase):
+    """Tests for open/openat and close syscalls."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        # Create a temp file for testing
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file.write(b"test content")
+        self.temp_file.close()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.temp_file.name)
+        except OSError:
+            pass
+
+    def _write_string(self, addr: int, s: str) -> None:
+        """Write null-terminated string to memory."""
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_open_existing_file(self):
+        """Test opening an existing file."""
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 5)  # open syscall
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname
+        self.cpu_state.registers.write_register(9, 0)  # O_RDONLY
+        self.cpu_state.registers.write_register(10, 0)  # mode
+
+        self.syscall.handle()
+
+        # Should return a valid fd (>= 3)
+        fd = self.cpu_state.registers.read_register(8)
+        self.assertGreaterEqual(fd, 3)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Clean up - close the fd
+        self.cpu_state.registers.write_register(1, 6)
+        self.cpu_state.registers.write_register(8, fd)
+        self.syscall.handle()
+
+    def test_open_nonexistent_file(self):
+        """Test opening a nonexistent file returns ENOENT."""
+        self._write_string(0x1000, "/nonexistent/path/file.txt")
+        self.cpu_state.registers.write_register(1, 5)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0)
+        self.cpu_state.registers.write_register(10, 0)
+
+        self.syscall.handle()
+
+        # Should return ENOENT (2)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)
+        self.assertTrue(self.cpu_state.icc.c)
+
+    def test_openat_with_at_fdcwd(self):
+        """Test openat with AT_FDCWD."""
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 284)  # openat syscall
+        self.cpu_state.registers.write_register(8, 0xFFFFFF9C)  # AT_FDCWD (-100)
+        self.cpu_state.registers.write_register(9, 0x1000)  # pathname
+        self.cpu_state.registers.write_register(10, 0)  # O_RDONLY
+        self.cpu_state.registers.write_register(11, 0)  # mode
+
+        self.syscall.handle()
+
+        fd = self.cpu_state.registers.read_register(8)
+        self.assertGreaterEqual(fd, 3)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Clean up
+        self.cpu_state.registers.write_register(1, 6)
+        self.cpu_state.registers.write_register(8, fd)
+        self.syscall.handle()
+
+
+class TestSyscallUnlink(unittest.TestCase):
+    """Tests for unlink syscall (syscall 10)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def _write_string(self, addr: int, s: str) -> None:
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_unlink_existing_file(self):
+        """Test unlinking an existing file."""
+        # Create temp file
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            temp_path = f.name
+
+        self._write_string(0x1000, temp_path)
+        self.cpu_state.registers.write_register(1, 10)  # unlink
+        self.cpu_state.registers.write_register(8, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+        self.assertFalse(os.path.exists(temp_path))
+
+    def test_unlink_nonexistent_file(self):
+        """Test unlinking a nonexistent file returns ENOENT."""
+        self._write_string(0x1000, "/nonexistent/file.txt")
+        self.cpu_state.registers.write_register(1, 10)
+        self.cpu_state.registers.write_register(8, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)  # ENOENT
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallFstat(unittest.TestCase):
+    """Tests for fstat/fstat64 syscalls."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_fstat_stdin(self):
+        """Test fstat on stdin returns success."""
+        self.cpu_state.registers.write_register(1, 62)  # fstat
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, 0x1000)  # stat buffer
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_fstat_invalid_fd(self):
+        """Test fstat on invalid fd returns EBADF."""
+        self.cpu_state.registers.write_register(1, 62)
+        self.cpu_state.registers.write_register(8, 99)  # invalid fd
+        self.cpu_state.registers.write_register(9, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallLseek(unittest.TestCase):
+    """Tests for lseek syscall (syscall 19)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        # Create temp file with content
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file.write(b"0123456789")
+        self.temp_file.close()
+        # Open the file
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 5)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0)
+        self.cpu_state.registers.write_register(10, 0)
+        self.syscall.handle()
+        self.fd = self.cpu_state.registers.read_register(8)
+
+    def tearDown(self):
+        # Close fd
+        self.cpu_state.registers.write_register(1, 6)
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.syscall.handle()
+        os.unlink(self.temp_file.name)
+
+    def _write_string(self, addr: int, s: str) -> None:
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_lseek_set(self):
+        """Test lseek with SEEK_SET."""
+        self.cpu_state.registers.write_register(1, 19)  # lseek
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.cpu_state.registers.write_register(9, 5)  # offset
+        self.cpu_state.registers.write_register(10, 0)  # SEEK_SET
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 5)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_lseek_end(self):
+        """Test lseek with SEEK_END."""
+        self.cpu_state.registers.write_register(1, 19)
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.cpu_state.registers.write_register(9, 0)  # offset
+        self.cpu_state.registers.write_register(10, 2)  # SEEK_END
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 10)  # file size
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallMmap(unittest.TestCase):
+    """Tests for mmap/mmap2 syscalls."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_mmap_anonymous(self):
+        """Test anonymous mmap allocation."""
+        self.cpu_state.registers.write_register(1, 71)  # mmap
+        self.cpu_state.registers.write_register(8, 0)  # addr (let kernel choose)
+        self.cpu_state.registers.write_register(9, 0x1000)  # length
+        self.cpu_state.registers.write_register(10, 0x3)  # PROT_READ | PROT_WRITE
+        self.cpu_state.registers.write_register(11, 0x22)  # MAP_PRIVATE | MAP_ANONYMOUS
+        self.cpu_state.registers.write_register(12, 0xFFFFFFFF)  # fd = -1
+        self.cpu_state.registers.write_register(13, 0)  # offset
+
+        self.syscall.handle()
+
+        addr = self.cpu_state.registers.read_register(8)
+        self.assertGreater(addr, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify we can write to the allocated memory
+        self.cpu_state.memory.write(addr, b"test")
+        self.assertEqual(self.cpu_state.memory.read(addr, 4), b"test")
+
+    def test_mmap2_anonymous(self):
+        """Test mmap2 with anonymous mapping."""
+        self.cpu_state.registers.write_register(1, 56)  # mmap2
+        self.cpu_state.registers.write_register(8, 0)
+        self.cpu_state.registers.write_register(9, 0x2000)
+        self.cpu_state.registers.write_register(10, 0x3)
+        self.cpu_state.registers.write_register(11, 0x22)
+        self.cpu_state.registers.write_register(12, 0xFFFFFFFF)
+        self.cpu_state.registers.write_register(13, 0)
+
+        self.syscall.handle()
+
+        addr = self.cpu_state.registers.read_register(8)
+        self.assertGreater(addr, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_mmap_zero_length_fails(self):
+        """Test mmap with zero length fails."""
+        self.cpu_state.registers.write_register(1, 71)
+        self.cpu_state.registers.write_register(8, 0)
+        self.cpu_state.registers.write_register(9, 0)  # zero length
+        self.cpu_state.registers.write_register(10, 0x3)
+        self.cpu_state.registers.write_register(11, 0x22)
+        self.cpu_state.registers.write_register(12, 0xFFFFFFFF)
+        self.cpu_state.registers.write_register(13, 0)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 22)  # EINVAL
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallSignals(unittest.TestCase):
+    """Tests for signal-related syscalls (stubs)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_rt_sigaction(self):
+        """Test rt_sigaction returns success."""
+        self.cpu_state.registers.write_register(1, 102)  # rt_sigaction
+        self.cpu_state.registers.write_register(8, 2)  # SIGINT
+        self.cpu_state.registers.write_register(9, 0x1000)  # act
+        self.cpu_state.registers.write_register(10, 0)  # oldact
+        self.cpu_state.registers.write_register(11, 8)  # sigsetsize
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_rt_sigprocmask(self):
+        """Test rt_sigprocmask returns success."""
+        self.cpu_state.registers.write_register(1, 103)  # rt_sigprocmask
+        self.cpu_state.registers.write_register(8, 0)  # SIG_BLOCK
+        self.cpu_state.registers.write_register(9, 0x1000)  # set
+        self.cpu_state.registers.write_register(10, 0)  # oldset
+        self.cpu_state.registers.write_register(11, 8)  # sigsetsize
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallThread(unittest.TestCase):
+    """Tests for thread-related syscalls (stubs)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_set_tid_address(self):
+        """Test set_tid_address returns TID."""
+        self.cpu_state.registers.write_register(1, 166)  # set_tid_address
+        self.cpu_state.registers.write_register(8, 0x1000)  # tidptr
+
+        self.syscall.handle()
+
+        # Should return TID (1000 in our implementation)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 1000)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_set_robust_list(self):
+        """Test set_robust_list returns success."""
+        self.cpu_state.registers.write_register(1, 300)  # set_robust_list
+        self.cpu_state.registers.write_register(8, 0x1000)  # head
+        self.cpu_state.registers.write_register(9, 12)  # len
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallPrlimit(unittest.TestCase):
+    """Tests for prlimit64 syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_prlimit64_query(self):
+        """Test prlimit64 returns limits."""
+        self.cpu_state.registers.write_register(1, 331)  # prlimit64
+        self.cpu_state.registers.write_register(8, 0)  # pid (current)
+        self.cpu_state.registers.write_register(9, 3)  # RLIMIT_STACK
+        self.cpu_state.registers.write_register(10, 0)  # new_limit (NULL)
+        self.cpu_state.registers.write_register(11, 0x1000)  # old_limit
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Check that limits were written (should be RLIM_INFINITY)
+        data = self.cpu_state.memory.read(0x1000, 16)
+        self.assertEqual(len(data), 16)
+
+
+class TestSyscallFchmod(unittest.TestCase):
+    """Tests for fchmod syscall."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        # Create and open temp file
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file.close()
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 5)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 2)  # O_RDWR
+        self.cpu_state.registers.write_register(10, 0)
+        self.syscall.handle()
+        self.fd = self.cpu_state.registers.read_register(8)
+
+    def tearDown(self):
+        self.cpu_state.registers.write_register(1, 6)
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.syscall.handle()
+        os.unlink(self.temp_file.name)
+
+    def _write_string(self, addr: int, s: str) -> None:
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_fchmod_changes_permissions(self):
+        """Test fchmod changes file permissions."""
+        self.cpu_state.registers.write_register(1, 124)  # fchmod
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.cpu_state.registers.write_register(9, 0o755)  # mode
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify permissions changed
+        st = os.stat(self.temp_file.name)
+        self.assertEqual(st.st_mode & 0o777, 0o755)
+
+    def test_fchmod_invalid_fd(self):
+        """Test fchmod with invalid fd returns EBADF."""
+        self.cpu_state.registers.write_register(1, 124)
+        self.cpu_state.registers.write_register(8, 99)  # invalid fd
+        self.cpu_state.registers.write_register(9, 0o755)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
+        self.assertTrue(self.cpu_state.icc.c)
 
 
 if __name__ == "__main__":
