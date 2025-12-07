@@ -65,7 +65,7 @@ make -C bin clean all
 - Register windows follow SPARC V8 semantics—each window stores ins and locals; outs resolve via CWP overlap
 - ELF loader supports both static and dynamically linked executables, including PT_INTERP parsing and R_SPARC_RELATIVE relocations
 - Dynamic linking works by loading the uClibc interpreter and setting up the auxiliary vector (auxv)
-- Syscalls include file I/O (open, read, write, close, lseek, stat), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, etc.)
+- Syscalls include file I/O (open, read, write, close, lseek, stat, mkdir, getdents64), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, umask, etc.)
 
 ## License
 

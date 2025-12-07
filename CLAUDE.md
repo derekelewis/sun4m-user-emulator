@@ -59,10 +59,22 @@
 
 ## Busybox Support
 - Busybox utilities (tar, gzip, etc.) from buildroot work with the emulator.
+- Directory traversal is supported via `getdents64` syscall for recursive operations.
 - Example running tar:
   ```bash
+  # Show help
   python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
     ~/work/repos/third-party/buildroot/output/target/bin/tar --help
+
+  # Create archive from host directory
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    --passthrough /home --passthrough /tmp \
+    ~/work/repos/third-party/buildroot/output/target/bin/tar cvf /tmp/out.tar /home/user/files
+
+  # Extract archive to host directory
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    --passthrough /tmp \
+    ~/work/repos/third-party/buildroot/output/target/bin/tar xvf /tmp/out.tar -C /tmp/output
   ```
 
 ## Architecture Overview
