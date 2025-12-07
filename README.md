@@ -33,12 +33,31 @@ python -m sun4m ./bin/gzip --help
 # Run a dynamically linked binary (requires sysroot with uClibc)
 python -m sun4m --sysroot /path/to/buildroot/output/target ./bin/gzip_dynamic --help
 
+# Run busybox utilities (tar, etc.)
+python -m sun4m --sysroot /path/to/buildroot/output/target \
+  /path/to/buildroot/output/target/bin/tar --help
+
+# Access host filesystem paths directly with --passthrough
+# (bypasses sysroot translation for specified paths)
+python -m sun4m --sysroot /path/to/buildroot/output/target \
+  --passthrough /home --passthrough /tmp \
+  /path/to/buildroot/output/target/bin/tar cvf /tmp/archive.tar /home/user/files
+
 # Run tests
 python -m unittest
 
 # Rebuild sample SPARC binary
 make -C bin clean all
 ```
+
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--sysroot PATH` | Path prefix for guest filesystem (e.g., buildroot output/target) |
+| `--passthrough PATH` | Host path to access directly, bypassing sysroot (repeatable) |
+| `--steps N` | Maximum number of instructions to execute |
+| `--trace` | Enable instruction tracing |
 
 ## Architecture
 

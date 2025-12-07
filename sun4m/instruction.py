@@ -372,6 +372,11 @@ class Format3Instruction(Instruction):
                 result = op1 | op2
                 cpu_state.registers.write_register(self.rd, result)
                 cpu_state.icc.update(result, op1, op2, is_sub=False)
+            case 0b000110:  # ORN instruction (OR NOT)
+                op1 = cpu_state.registers.read_register(self.rs1)
+                op2 = self._get_operand2(cpu_state)
+                result = op1 | (~op2 & 0xFFFFFFFF)
+                cpu_state.registers.write_register(self.rd, result)
             case 0b000011:  # XOR instruction
                 op1 = cpu_state.registers.read_register(self.rs1)
                 op2 = self._get_operand2(cpu_state)

@@ -45,6 +45,26 @@
   QEMU_LD_PREFIX=~/work/repos/third-party/buildroot/output/target qemu-sparc ./bin/gzip_dynamic --help
   ```
 
+## Host Filesystem Passthrough
+- Use `--passthrough` to access host filesystem paths directly, bypassing sysroot translation.
+- This is useful when you want the emulated program to read/write files on the host system.
+- Can be specified multiple times for different path prefixes:
+  ```bash
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    --passthrough /home --passthrough /tmp \
+    ~/work/repos/third-party/buildroot/output/target/bin/tar cvf /tmp/out.tar /home/user/files
+  ```
+- Path matching is prefix-based: `--passthrough /tmp` allows access to `/tmp`, `/tmp/foo`, `/tmp/foo/bar`, etc.
+- Paths not matching any passthrough prefix are translated through the sysroot as usual.
+
+## Busybox Support
+- Busybox utilities (tar, gzip, etc.) from buildroot work with the emulator.
+- Example running tar:
+  ```bash
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    ~/work/repos/third-party/buildroot/output/target/bin/tar --help
+  ```
+
 ## Architecture Overview
 - `Machine` owns `SystemMemory` segments and a `cpu` (`CpuState`) that shares that memory; run code with `machine.cpu.step()`/`run()`.
 - `register.py` models register windows; `syscall.py` implements trap-based syscalls (write, exit).

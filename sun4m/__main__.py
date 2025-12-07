@@ -13,6 +13,14 @@ parser.add_argument(
     default="",
     help="path prefix for guest filesystem (e.g., buildroot output/target)",
 )
+parser.add_argument(
+    "--passthrough",
+    type=str,
+    action="append",
+    default=[],
+    metavar="PATH",
+    help="host path to access directly, bypassing sysroot (can be used multiple times)",
+)
 parser.add_argument("file", help="ELF binary to execute")
 parser.add_argument(
     "program_args",
@@ -23,7 +31,9 @@ args = parser.parse_args()
 
 
 def main() -> None:
-    machine: Machine = Machine(trace=args.trace, sysroot=args.sysroot)
+    machine: Machine = Machine(
+        trace=args.trace, sysroot=args.sysroot, passthrough=args.passthrough
+    )
     argv = [args.file] + args.program_args
     machine.load_file(args.file, argv=argv)
     # Run until program exits or step limit reached

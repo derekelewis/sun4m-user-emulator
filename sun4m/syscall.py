@@ -92,6 +92,8 @@ class Syscall:
                 self._syscall_close()
             case 10:
                 self._syscall_unlink()
+            case 12:
+                self._syscall_chdir()
             case 17:
                 self._syscall_brk()
             case 19:
@@ -100,8 +102,20 @@ class Syscall:
                 self._syscall_fstat64()
             case 32:
                 self._syscall_fchown()
+            case 35:
+                self._syscall_chown()  # chown32
             case 38:
                 self._syscall_stat()
+            case 44:
+                self._syscall_getuid()
+            case 47:
+                self._syscall_getgid()
+            case 49:
+                self._syscall_geteuid()
+            case 50:
+                self._syscall_getegid()
+            case 53:
+                self._syscall_getgid()  # getgid32 - same as getgid
             case 54:
                 self._syscall_ioctl()
             case 56:
@@ -116,16 +130,26 @@ class Syscall:
                 self._syscall_mprotect()  # SPARC mprotect
             case 85:
                 self._syscall_readlink()
+            case 87:
+                self._syscall_setuid()  # setuid32
+            case 89:
+                self._syscall_setgid()  # setgid32
+            case 90:
+                self._syscall_dup2()
             case 102:
                 self._syscall_rt_sigaction()
             case 103:
                 self._syscall_rt_sigprocmask()
             case 124:
                 self._syscall_fchmod()
+            case 140:
+                self._syscall_sendfile64()
             case 188:
                 self._syscall_exit()  # exit_group - same as exit for single-threaded
             case 215:
                 self._syscall_stat64()
+            case 236:
+                self._syscall_llseek()
             case 284:
                 self._syscall_openat()
             case 166:
@@ -225,29 +249,32 @@ class Syscall:
         Returns:
           %o0 = current break address, carry clear on success
 
-        LIMITATION: The heap is fixed at 1MB (0x100000 bytes) starting at
-        address 0x100000. Allocations beyond this limit will succeed from
-        brk's perspective but will cause MemoryError when the program
-        attempts to access memory beyond the allocated segment. Programs
-        requiring more heap space will need this limit increased.
+        The heap starts at 0x10000000 (256MB) to avoid conflicts with PIE
+        executables and has a maximum size of 512MB.
         """
         new_brk = self.cpu_state.registers.read_register(8)
 
-        # Initialize brk to a reasonable heap start if not set
+        # Heap region: 0x10000000 to 0x30000000 (256MB to 768MB, 512MB total)
+        HEAP_START = 0x10000000
+        HEAP_SIZE = 0x20000000  # 512MB
+
+        # Initialize brk if not set
         if self.cpu_state.brk == 0:
-            # Set initial break to 0x100000 (1MB) - above typical code/data
-            self.cpu_state.brk = 0x100000
-            # Create initial heap segment (1MB fixed size - see docstring)
-            self.cpu_state.memory.add_segment(self.cpu_state.brk, 0x100000)
+            self.cpu_state.brk = HEAP_START
+            # Create a large heap segment
+            self.cpu_state.memory.add_segment(HEAP_START, HEAP_SIZE)
 
         if new_brk == 0:
             # Query current break
             self._return_success(self.cpu_state.brk)
         elif new_brk > self.cpu_state.brk:
-            # Extend the heap - we only update the break pointer.
-            # Note: accesses beyond the initial 1MB segment will fail.
-            self.cpu_state.brk = new_brk
-            self._return_success(self.cpu_state.brk)
+            # Extend the heap
+            if new_brk <= HEAP_START + HEAP_SIZE:
+                self.cpu_state.brk = new_brk
+                self._return_success(self.cpu_state.brk)
+            else:
+                # Request exceeds heap limit - return current brk (failure)
+                self._return_success(self.cpu_state.brk)
         else:
             # Shrink or same - just update and return
             self.cpu_state.brk = new_brk
@@ -383,6 +410,41 @@ class Syscall:
             self._return_error(-result)
         else:
             self._return_success(result & 0xFFFFFFFF)
+
+    def _syscall_llseek(self):
+        """
+        _llseek syscall implementation (64-bit seek for 32-bit systems)
+        Arguments:
+          %o0 (reg 8) = file descriptor
+          %o1 (reg 9) = offset high 32 bits
+          %o2 (reg 10) = offset low 32 bits
+          %o3 (reg 11) = result pointer (for 64-bit result)
+          %o4 (reg 12) = whence
+        Returns:
+          %o0 = 0 on success, -errno on error
+          Result written to *result pointer (64-bit)
+        """
+        fd = self.cpu_state.registers.read_register(8)
+        offset_high = self.cpu_state.registers.read_register(9)
+        offset_low = self.cpu_state.registers.read_register(10)
+        result_ptr = self.cpu_state.registers.read_register(11)
+        whence = self.cpu_state.registers.read_register(12)
+
+        # Combine into 64-bit offset
+        offset = (offset_high << 32) | offset_low
+        # Handle signed offset
+        if offset & 0x8000000000000000:
+            offset = offset - 0x10000000000000000
+
+        result = self.cpu_state.fd_table.lseek(fd, offset, whence)
+        if result < 0:
+            self._return_error(-result)
+        else:
+            # Write 64-bit result to memory
+            self.cpu_state.memory.write(
+                result_ptr, struct.pack(">Q", result & 0xFFFFFFFFFFFFFFFF)
+            )
+            self._return_success(0)
 
     def _write_stat64(self, addr: int, st: os.stat_result) -> None:
         """Write a stat64 structure to guest memory.
@@ -552,6 +614,19 @@ class Syscall:
         # Stub: just return success - we don't actually change ownership
         self._return_success(0)
 
+    def _syscall_chown(self):
+        """
+        chown / chown32 syscall implementation
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+          %o1 (reg 9) = owner
+          %o2 (reg 10) = group
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        # Stub: just return success - we don't actually change ownership
+        self._return_success(0)
+
     def _syscall_fchmod(self):
         """
         fchmod syscall implementation
@@ -577,6 +652,74 @@ class Syscall:
         except OSError as e:
             self._return_error(e.errno if e.errno else EACCES)
 
+    def _syscall_sendfile64(self):
+        """
+        sendfile64 syscall implementation - copy data between file descriptors
+        Arguments:
+          %o0 (reg 8) = out_fd
+          %o1 (reg 9) = in_fd
+          %o2 (reg 10) = offset pointer (or NULL)
+          %o3 (reg 11) = count
+        Returns:
+          %o0 = number of bytes copied on success
+          %o0 = errno, carry set on error
+        """
+        out_fd = self.cpu_state.registers.read_register(8)
+        in_fd = self.cpu_state.registers.read_register(9)
+        offset_ptr = self.cpu_state.registers.read_register(10)
+        count = self.cpu_state.registers.read_register(11)
+
+        in_desc = self.cpu_state.fd_table.get(in_fd)
+        out_desc = self.cpu_state.fd_table.get(out_fd)
+
+        if in_desc is None or out_desc is None:
+            self._return_error(EBADF)
+            return
+
+        try:
+            # Handle offset if provided
+            if offset_ptr != 0:
+                # Read 64-bit offset from memory
+                offset_bytes = self.cpu_state.memory.read(offset_ptr, 8)
+                offset = struct.unpack(">Q", offset_bytes)[0]
+                if in_desc.file:
+                    in_desc.file.seek(offset)
+
+            # Read from input
+            if in_desc.file:
+                data = in_desc.file.read(count)
+            else:
+                self._return_error(EBADF)
+                return
+
+            # Write to output
+            if out_desc.is_special:
+                if out_fd == 1:
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                elif out_fd == 2:
+                    sys.stderr.buffer.write(data)
+                    sys.stderr.buffer.flush()
+                else:
+                    self._return_error(EBADF)
+                    return
+            elif out_desc.file:
+                out_desc.file.write(data)
+            else:
+                self._return_error(EBADF)
+                return
+
+            # Update offset if provided
+            if offset_ptr != 0 and in_desc.file:
+                new_offset = in_desc.file.tell()
+                self.cpu_state.memory.write(
+                    offset_ptr, struct.pack(">Q", new_offset)
+                )
+
+            self._return_success(len(data))
+        except OSError as e:
+            self._return_error(e.errno if e.errno else EBADF)
+
     def _syscall_unlink(self):
         """
         unlink syscall implementation
@@ -594,6 +737,30 @@ class Syscall:
             self._return_success(0)
         except FileNotFoundError:
             self._return_error(ENOENT)
+        except PermissionError:
+            self._return_error(EACCES)
+        except OSError as e:
+            self._return_error(e.errno if e.errno else ENOENT)
+
+    def _syscall_chdir(self):
+        """
+        chdir syscall implementation
+        Arguments:
+          %o0 (reg 8) = pathname pointer
+        Returns:
+          %o0 = 0 on success, -errno on error
+        """
+        pathname_ptr = self.cpu_state.registers.read_register(8)
+        pathname = self._read_string(pathname_ptr)
+        host_path = self.cpu_state.fd_table.translate_path(pathname)
+
+        try:
+            os.chdir(host_path)
+            self._return_success(0)
+        except FileNotFoundError:
+            self._return_error(ENOENT)
+        except NotADirectoryError:
+            self._return_error(ENOTDIR)
         except PermissionError:
             self._return_error(EACCES)
         except OSError as e:
@@ -838,6 +1005,80 @@ class Syscall:
                 self._return_error(EINVAL)
             else:
                 self._return_error(e.errno if e.errno else ENOENT)
+
+    def _syscall_getuid(self):
+        """
+        getuid / getuid32 syscall implementation
+        Returns:
+          %o0 = user ID
+        """
+        # Return a fixed UID - matches our fake TID
+        self._return_success(1000)
+
+    def _syscall_getgid(self):
+        """
+        getgid / getgid32 syscall implementation
+        Returns:
+          %o0 = group ID
+        """
+        self._return_success(1000)
+
+    def _syscall_geteuid(self):
+        """
+        geteuid syscall implementation
+        Returns:
+          %o0 = effective user ID
+        """
+        self._return_success(1000)
+
+    def _syscall_getegid(self):
+        """
+        getegid syscall implementation
+        Returns:
+          %o0 = effective group ID
+        """
+        self._return_success(1000)
+
+    def _syscall_setuid(self):
+        """
+        setuid / setuid32 syscall implementation
+        Arguments:
+          %o0 (reg 8) = uid
+        Returns:
+          %o0 = 0 on success
+        """
+        # Stub - just return success (we don't actually change privileges)
+        self._return_success(0)
+
+    def _syscall_setgid(self):
+        """
+        setgid / setgid32 syscall implementation
+        Arguments:
+          %o0 (reg 8) = gid
+        Returns:
+          %o0 = 0 on success
+        """
+        # Stub - just return success
+        self._return_success(0)
+
+    def _syscall_dup2(self):
+        """
+        dup2 syscall implementation
+        Arguments:
+          %o0 (reg 8) = oldfd
+          %o1 (reg 9) = newfd
+        Returns:
+          %o0 = new fd on success
+          %o0 = errno, carry set on error
+        """
+        oldfd = self.cpu_state.registers.read_register(8)
+        newfd = self.cpu_state.registers.read_register(9)
+
+        result = self.cpu_state.fd_table.dup2(oldfd, newfd)
+        if result < 0:
+            self._return_error(-result)
+        else:
+            self._return_success(result)
 
     def _syscall_set_tid_address(self):
         """
