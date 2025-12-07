@@ -463,6 +463,78 @@ class TestInstruction(unittest.TestCase):
         ba_instruction.execute(cpu_state)
         self.assertEqual(cpu_state.npc, 0xFF0)  # 0x1000 + (-4 * 4)
 
+    # --- Branch annul bit tests ---
+
+    def test_ba_annul_skips_delay_slot(self):
+        # BA,A (branch always with annul) should skip delay slot
+        # Format: 00 1 1000 010 disp22 with annul bit (bit 29) set
+        inst: int = 0x30800004  # BA,A +16
+        ba_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(ba_instruction.cond, 0b1000)  # BA
+        self.assertEqual(ba_instruction.a, 1)  # annul bit set
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.annul_next = False
+        ba_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)  # branch taken
+        self.assertTrue(cpu_state.annul_next)  # delay slot should be annulled
+
+    def test_ba_no_annul_executes_delay_slot(self):
+        # BA without annul should NOT skip delay slot
+        inst: int = 0x10800004  # BA +16 (no annul)
+        ba_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(ba_instruction.a, 0)  # annul bit not set
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.annul_next = False
+        ba_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)  # branch taken
+        self.assertFalse(cpu_state.annul_next)  # delay slot should execute
+
+    def test_bn_annul_skips_delay_slot(self):
+        # BN,A (branch never with annul) should skip delay slot
+        # BN never branches, but with annul it should still skip delay slot
+        inst: int = 0x20800004  # BN,A +16
+        bn_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(bn_instruction.cond, 0b0000)  # BN
+        self.assertEqual(bn_instruction.a, 1)  # annul bit set
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.npc = 0x1004
+        cpu_state.annul_next = False
+        bn_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1004)  # branch not taken
+        self.assertTrue(cpu_state.annul_next)  # delay slot should be annulled
+
+    def test_bne_annul_taken_executes_delay_slot(self):
+        # BNE,A when taken should NOT skip delay slot (conditional branch)
+        inst: int = 0x32800004  # BNE,A +16
+        bne_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(bne_instruction.cond, 0b1001)  # BNE
+        self.assertEqual(bne_instruction.a, 1)  # annul bit set
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.icc.z = False  # not equal, so branch taken
+        cpu_state.annul_next = False
+        bne_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1010)  # branch taken
+        self.assertFalse(cpu_state.annul_next)  # delay slot should execute
+
+    def test_bne_annul_not_taken_skips_delay_slot(self):
+        # BNE,A when not taken should skip delay slot
+        inst: int = 0x32800004  # BNE,A +16
+        bne_instruction: Format2Instruction = Format2Instruction(inst)
+        self.assertEqual(bne_instruction.cond, 0b1001)  # BNE
+        self.assertEqual(bne_instruction.a, 1)  # annul bit set
+        cpu_state: CpuState = CpuState()
+        cpu_state.pc = 0x1000
+        cpu_state.npc = 0x1004
+        cpu_state.icc.z = True  # equal, so branch not taken
+        cpu_state.annul_next = False
+        bne_instruction.execute(cpu_state)
+        self.assertEqual(cpu_state.npc, 0x1004)  # branch not taken
+        self.assertTrue(cpu_state.annul_next)  # delay slot should be annulled
+
     # --- ICC update tests ---
 
     def test_icc_update_zero(self):
