@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fcntl
+import logging
 import os
 import select
 import stat
@@ -8,6 +9,8 @@ import struct
 import sys
 import termios
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sun4m.cpu import CpuState
@@ -393,8 +396,8 @@ class Syscall:
                         elif request == TCSETSF:
                             when = termios.TCSAFLUSH
                         termios.tcsetattr(fd, when, attrs)
-                    except (termios.error, OSError, IndexError, struct.error):
-                        pass  # Silently ignore errors, vi will still work
+                    except (termios.error, OSError, IndexError, struct.error) as e:
+                        logger.debug("termios.tcsetattr failed: %s", e)
                 self._return_success(0)
             elif request == TIOCGWINSZ:
                 # Get window size
@@ -404,8 +407,8 @@ class Syscall:
                         self.cpu_state.memory.write(arg, result)
                         self._return_success(0)
                         return
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        logger.debug("TIOCGWINSZ ioctl failed: %s", e)
                 # Return default size
                 ws = struct.pack(">HHHH", 24, 80, 0, 0)
                 self.cpu_state.memory.write(arg, ws)

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import io
 import os
+import shutil
 import sys
 import tempfile
 
@@ -1003,7 +1004,6 @@ class TestDirectoryOpen(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_open_directory(self):
@@ -1055,7 +1055,6 @@ class TestSyscallGetdents64(unittest.TestCase):
         os.mkdir(os.path.join(self.temp_dir, "subdir"))
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_getdents64_reads_entries(self):
@@ -1199,7 +1198,6 @@ class TestSyscallMkdir(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_mkdir_creates_directory(self):
@@ -1254,7 +1252,6 @@ class TestSyscallFstat64Directory(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_fstat64_on_directory(self):
@@ -1294,7 +1291,6 @@ class TestSyscallStatxDirectory(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_statx_on_directory_fd_with_empty_path(self):
@@ -1402,7 +1398,6 @@ class TestSyscallLstat(unittest.TestCase):
         os.symlink(self.temp_file, self.temp_link)
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def _write_string(self, addr: int, s: str) -> None:

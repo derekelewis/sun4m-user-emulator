@@ -54,7 +54,8 @@ TODOs
         - [x] open (5), openat (284)
         - [x] read (3), write (4), close (6)
         - [x] lseek, llseek (236)
-        - [x] stat64 (215), fstat64 (28), statx (360)
+        - [x] stat64 (215), fstat64 (28), lstat (84), statx (360)
+        - [x] access (33)
         - [x] readlinkat (294)
         - [x] dup2
         - [x] mkdir (136)
@@ -63,6 +64,7 @@ TODOs
         - [x] chown32
         - [x] utimensat (412)
         - [x] sendfile64 (140)
+        - [x] poll (153)
     - Directory operations:
         - [x] getdents64 (154)
         - [x] Directory open support (O_DIRECTORY)
@@ -79,7 +81,7 @@ TODOs
         - [x] set_robust_list (300)
         - [x] prlimit64 (331)
     - Other:
-        - [x] ioctl (54)
+        - [x] ioctl (54) with terminal support (TCGETS, TCSETS, TCSETSW, TCSETSF, TIOCGWINSZ, TIOCSWINSZ)
         - [x] getrandom (347)
         - [x] rt_sigaction (102), rt_sigprocmask (103)
     - [x] Syscall error handling (carry flag for errors)
@@ -91,6 +93,7 @@ TODOs
 6. Busybox utilities
     - [x] gzip (compression/decompression)
     - [x] tar (create/extract archives with directory traversal)
+    - [x] vi (interactive text editor with terminal support)
 7. Future work
     - [ ] Floating-point instructions (FPU)
     - [ ] Memory protection (segment permissions)
