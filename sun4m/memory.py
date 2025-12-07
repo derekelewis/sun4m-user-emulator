@@ -1,6 +1,6 @@
-# Memory protection flags (matching Linux)
 from functools import lru_cache
 
+# Memory protection flags (matching Linux)
 PROT_NONE = 0x0
 PROT_READ = 0x1
 PROT_WRITE = 0x2
@@ -193,7 +193,9 @@ class SystemMemory:
                         right_start, right_size, seg.permissions, seg.name
                     )
                     right_offset = end - seg.start
-                    right_seg.buffer[:] = seg.buffer[right_offset : right_offset + right_size]
+                    right_seg.buffer[:] = seg.buffer[
+                        right_offset : right_offset + right_size
+                    ]
                     to_add.append((right_start, right_size, right_seg))
                 elif seg.start < addr:
                     # Segment extends before range - truncate end
@@ -259,7 +261,7 @@ class SystemMemory:
             return True
         return False
 
-    @lru_cache(maxsize=64)
+    @lru_cache
     def segment_for_addr(self, addr: int) -> MemorySegment | None:
         """Retrieve segment given an address"""
         for segment in self._segments.values():
