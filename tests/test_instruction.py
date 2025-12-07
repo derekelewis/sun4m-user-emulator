@@ -38,7 +38,8 @@ class TestInstruction(unittest.TestCase):
         self.assertEqual(save_instruction.simm13, -96)
         cpu_state: CpuState = CpuState()
         save_instruction.execute(cpu_state)
-        self.assertEqual(cpu_state.registers.cwp, 7)
+        # CWP wraps from 0 to n_windows-1
+        self.assertEqual(cpu_state.registers.cwp, cpu_state.registers.n_windows - 1)
         self.assertEqual(cpu_state.registers.read_register(14), (-96) & 0xFFFFFFFF)
 
     # TODO: need test_save_instruction_rs2_execute

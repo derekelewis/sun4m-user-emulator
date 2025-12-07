@@ -481,24 +481,28 @@ class Format3Instruction(Instruction):
                         + cpu_state.registers.read_register(self.rs2)
                     ) & 0xFFFFFFFF
             case 0b111100:  # SAVE instruction
+                # Calculate the result BEFORE changing CWP
                 sp = cpu_state.registers.read_register(self.rs1)
                 if self.i:
                     sp = sp + self.simm13
                 else:
                     sp = sp + cpu_state.registers.read_register(self.rs2)
-                cpu_state.registers.cwp = (
-                    cpu_state.registers.cwp - 1
-                ) % cpu_state.registers.n_windows
+
+                # Decrement CWP (wraps around with large window pool)
+                n_windows = cpu_state.registers.n_windows
+                cpu_state.registers.cwp = (cpu_state.registers.cwp - 1) % n_windows
                 cpu_state.registers.write_register(self.rd, sp)
             case 0b111101:  # RESTORE instruction
+                # Calculate the result BEFORE changing CWP
                 sp = cpu_state.registers.read_register(self.rs1)
                 if self.i:
                     sp = sp + self.simm13
                 else:
                     sp = sp + cpu_state.registers.read_register(self.rs2)
-                cpu_state.registers.cwp = (
-                    cpu_state.registers.cwp + 1
-                ) % cpu_state.registers.n_windows
+
+                # Increment CWP (wraps around with large window pool)
+                n_windows = cpu_state.registers.n_windows
+                cpu_state.registers.cwp = (cpu_state.registers.cwp + 1) % n_windows
                 cpu_state.registers.write_register(self.rd, sp)
             case _:
                 raise ValueError(f"unimplemented arithmetic opcode: {self.op3:#08b}")

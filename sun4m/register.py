@@ -7,7 +7,7 @@ class Window:
 
 class RegisterFile:
 
-    def __init__(self, n_windows: int = 8):
+    def __init__(self, n_windows: int = 64):
         self.n_windows: int = n_windows
         self.windows: list[Window] = [Window() for _ in range(n_windows)]
         self.g: list[int] = [0] * 8
