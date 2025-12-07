@@ -204,6 +204,34 @@ class TestSyscallGetrandom(unittest.TestCase):
         self.assertEqual(self.cpu_state.registers.read_register(8), 0)
 
 
+class TestSyscallExitGroup(unittest.TestCase):
+    """Tests for exit_group syscall (syscall 188)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_exit_group_exits_with_code(self):
+        """Test exit_group syscall exits with the specified code."""
+        self.cpu_state.registers.write_register(1, 188)  # syscall number
+        self.cpu_state.registers.write_register(8, 42)  # exit code in %o0
+
+        with self.assertRaises(SystemExit) as context:
+            self.syscall.handle()
+
+        self.assertEqual(context.exception.code, 42)
+
+    def test_exit_group_exits_with_zero(self):
+        """Test exit_group syscall exits with code 0."""
+        self.cpu_state.registers.write_register(1, 188)  # syscall number
+        self.cpu_state.registers.write_register(8, 0)  # exit code 0
+
+        with self.assertRaises(SystemExit) as context:
+            self.syscall.handle()
+
+        self.assertEqual(context.exception.code, 0)
+
+
 class TestSyscallUnimplemented(unittest.TestCase):
     """Tests for unimplemented syscalls."""
 

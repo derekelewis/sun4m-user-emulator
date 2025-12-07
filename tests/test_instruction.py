@@ -735,6 +735,36 @@ class TestInstruction(unittest.TestCase):
         # Register should have old memory value
         self.assertEqual(cpu_state.registers.read_register(2), 0x11223344)
 
+    def test_ldstub_instruction_execute(self):
+        # LDSTUB [%g1 + 0], %g2 - atomically load byte and store 0xFF
+        # op=3, rd=2, op3=0b001101, rs1=1, i=1, simm13=0
+        inst: int = 0xC4686000
+        ldstub_instruction: Format3Instruction = Format3Instruction(inst)
+        self.assertEqual(ldstub_instruction.op3, 0b001101)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0x42]))  # initial byte value
+        cpu_state.registers.write_register(1, 0)  # address in %g1
+        ldstub_instruction.execute(cpu_state)
+        # Register should have old byte value (zero-extended)
+        self.assertEqual(cpu_state.registers.read_register(2), 0x42)
+        # Memory should now have 0xFF
+        self.assertEqual(cpu_state.memory.read(0, 1), bytes([0xFF]))
+
+    def test_ldstub_instruction_already_locked(self):
+        # LDSTUB on a byte that's already 0xFF (spinlock held)
+        inst: int = 0xC4686000  # LDSTUB [%g1 + 0], %g2
+        ldstub_instruction: Format3Instruction = Format3Instruction(inst)
+        cpu_state: CpuState = CpuState()
+        cpu_state.memory.add_segment(0, 0x100)
+        cpu_state.memory.write(0, bytes([0xFF]))  # already locked
+        cpu_state.registers.write_register(1, 0)
+        ldstub_instruction.execute(cpu_state)
+        # Register should have 0xFF (indicating lock was held)
+        self.assertEqual(cpu_state.registers.read_register(2), 0xFF)
+        # Memory should still have 0xFF
+        self.assertEqual(cpu_state.memory.read(0, 1), bytes([0xFF]))
+
     # --- Register-indexed load/store tests ---
 
     def test_ld_instruction_rs2_execute(self):
