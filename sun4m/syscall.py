@@ -32,6 +32,8 @@ class Syscall:
                 self._syscall_brk()
             case 54:
                 self._syscall_ioctl()
+            case 188:
+                self._syscall_exit()  # exit_group - same as exit for single-threaded
             case 360:
                 self._syscall_getrandom()
             case _:

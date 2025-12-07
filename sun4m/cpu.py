@@ -63,6 +63,8 @@ class CpuState:
         # Memory is shared with Machine; fall back to a private instance for
         # standalone CpuState usage in tests.
         self.memory: SystemMemory = memory if memory else SystemMemory()
+        # Flag set by branch instructions to annul the delay slot
+        self.annul_next: bool = False
 
     def step(self):
         """
@@ -90,8 +92,14 @@ class CpuState:
         instruction.execute(self)
 
         # Advance pipeline: execute delay-slot semantics.
-        self.pc = current_npc & 0xFFFFFFFF
-        self.npc = self.npc & 0xFFFFFFFF
+        # If annul_next is set, skip the delay slot entirely.
+        if self.annul_next:
+            self.annul_next = False
+            self.pc = self.npc & 0xFFFFFFFF
+            self.npc = (self.npc + 4) & 0xFFFFFFFF
+        else:
+            self.pc = current_npc & 0xFFFFFFFF
+            self.npc = self.npc & 0xFFFFFFFF
         return instruction
 
     def run(self, max_steps: int | None = None) -> None:

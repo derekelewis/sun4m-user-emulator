@@ -104,6 +104,9 @@ class Format2Instruction(Instruction):
         if take_branch:
             # Branch target is PC + (disp22 * 4)
             cpu_state.npc = (cpu_state.pc + (self.disp22 << 2)) & 0xFFFFFFFF
+        elif self.a:
+            # Annul bit set and branch not taken: skip the delay slot
+            cpu_state.annul_next = True
 
     def __str__(self) -> str:
         if self.op2 == 0b100:
@@ -270,6 +273,11 @@ class Format3Instruction(Instruction):
                 cpu_state.registers.write_register(
                     self.rd, int.from_bytes(old_value, "big")
                 )
+            case 0b001101:  # LDSTUB (Load-Store Unsigned Byte)
+                # Atomically read byte and write 0xFF
+                old_byte = cpu_state.memory.read(memory_address, 1)
+                cpu_state.memory.write(memory_address, bytes([0xFF]))
+                cpu_state.registers.write_register(self.rd, old_byte[0])
             case _:
                 raise ValueError(f"unimplemented load/store opcode: {self.op3:#08b}")
 
