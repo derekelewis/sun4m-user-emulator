@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 
 
 class Instruction:
-
     def __init__(self, inst: int):
         self.inst = inst
 
@@ -18,7 +17,6 @@ class Instruction:
 
 
 class CallInstruction(Instruction):
-
     def __init__(self, inst: int):
         super().__init__(inst)
         self.disp30: int = self.inst & ((1 << 30) - 1)  # erase op bits
@@ -34,7 +32,6 @@ class CallInstruction(Instruction):
 
 
 class Format2Instruction(Instruction):
-
     def __init__(self, inst: int):
         super().__init__(inst)
         self.op2: int = self.inst >> 22 & 0b111
@@ -123,7 +120,6 @@ class Format2Instruction(Instruction):
 
 
 class TrapInstruction(Instruction):
-
     def __init__(self, inst: int):
         super().__init__(inst)
         self.op3: int = self.inst >> 19 & 0b111111
@@ -169,7 +165,6 @@ class TrapInstruction(Instruction):
 
 
 class Format3Instruction(Instruction):
-
     def __init__(self, inst: int):
         super().__init__(inst)
         self.op: int = (

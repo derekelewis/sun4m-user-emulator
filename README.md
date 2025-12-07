@@ -33,9 +33,14 @@ python -m sun4m ./bin/gzip --help
 # Run a dynamically linked binary (requires sysroot with uClibc)
 python -m sun4m --sysroot /path/to/buildroot/output/target ./bin/gzip_dynamic --help
 
-# Run busybox utilities (tar, etc.)
+# Run busybox utilities (tar, vi, etc.)
 python -m sun4m --sysroot /path/to/buildroot/output/target \
   /path/to/buildroot/output/target/bin/tar --help
+
+# Run interactive vi editor
+python -m sun4m --sysroot /path/to/buildroot/output/target \
+  --passthrough /tmp \
+  /path/to/buildroot/output/target/bin/vi /tmp/myfile.txt
 
 # Access host filesystem paths directly with --passthrough
 # (bypasses sysroot translation for specified paths)
@@ -58,6 +63,7 @@ make -C bin clean all
 | `--passthrough PATH` | Host path to access directly, bypassing sysroot (repeatable) |
 | `--steps N` | Maximum number of instructions to execute (optional; runs until program exits if omitted) |
 | `--trace` | Enable instruction tracing |
+| `--profile [FILE]` | Enable cProfile and write stats to FILE (default: profile.stats) |
 
 ## Architecture
 
@@ -65,7 +71,7 @@ make -C bin clean all
 - Register windows follow SPARC V8 semantics—each window stores ins and locals; outs resolve via CWP overlap
 - ELF loader supports both static and dynamically linked executables, including PT_INTERP parsing and R_SPARC_RELATIVE relocations
 - Dynamic linking works by loading the uClibc interpreter and setting up the auxiliary vector (auxv)
-- Syscalls include file I/O (open, read, write, close, lseek, stat, mkdir, getdents64), memory mapping (mmap2, munmap, mprotect), and process info (getpid, getuid, umask, etc.)
+- Syscalls include file I/O (open, read, write, close, lseek, stat, lstat, access, poll, mkdir, getdents64), memory mapping (mmap2, munmap, mprotect), process info (getpid, getuid, umask, etc.), and terminal ioctls (termios, window size)
 
 ## License
 

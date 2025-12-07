@@ -1,5 +1,4 @@
 class Window:
-
     def __init__(self):
         self.i = [0] * 8
         self.l = [0] * 8

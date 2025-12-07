@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import io
 import os
+import shutil
 import sys
 import tempfile
 
@@ -155,17 +156,31 @@ class TestSyscallIoctl(unittest.TestCase):
         self.syscall = Syscall(self.cpu_state)
 
     def test_ioctl_returns_enotty(self):
-        """Test ioctl returns ENOTTY for non-tty file descriptors."""
+        """Test ioctl returns ENOTTY for non-standard file descriptors."""
         self.cpu_state.registers.write_register(1, 54)  # syscall number
-        self.cpu_state.registers.write_register(8, 1)  # fd = 1 (stdout)
+        self.cpu_state.registers.write_register(8, 5)  # fd = 5 (not stdin/stdout/stderr)
         self.cpu_state.registers.write_register(9, 0x5401)  # TIOCGWINSZ
         self.cpu_state.registers.write_register(10, 0x1000)  # arg
 
         self.syscall.handle()
 
-        # In test context, stdout is not a tty, so should return ENOTTY (25) with carry set
+        # Non-standard fds should return ENOTTY (25) with carry set
         self.assertEqual(self.cpu_state.registers.read_register(8), 25)
         self.assertTrue(self.cpu_state.icc.c)
+
+    def test_ioctl_stdin_returns_success(self):
+        """Test ioctl on stdin/stdout/stderr returns success with defaults."""
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.cpu_state.registers.write_register(1, 54)  # syscall number
+        self.cpu_state.registers.write_register(8, 0)  # fd = 0 (stdin)
+        self.cpu_state.registers.write_register(9, 0x40087468)  # SPARC TIOCGWINSZ
+        self.cpu_state.registers.write_register(10, 0x1000)  # arg buffer
+
+        self.syscall.handle()
+
+        # Should return success (0) with carry clear for stdin
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
 
 
 class TestSyscallGetrandom(unittest.TestCase):
@@ -989,7 +1004,6 @@ class TestDirectoryOpen(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_open_directory(self):
@@ -1041,7 +1055,6 @@ class TestSyscallGetdents64(unittest.TestCase):
         os.mkdir(os.path.join(self.temp_dir, "subdir"))
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_getdents64_reads_entries(self):
@@ -1185,7 +1198,6 @@ class TestSyscallMkdir(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_mkdir_creates_directory(self):
@@ -1240,7 +1252,6 @@ class TestSyscallFstat64Directory(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_fstat64_on_directory(self):
@@ -1280,7 +1291,6 @@ class TestSyscallStatxDirectory(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_statx_on_directory_fd_with_empty_path(self):
@@ -1314,6 +1324,509 @@ class TestSyscallStatxDirectory(unittest.TestCase):
         statx_buf = self.cpu_state.memory.read(0x1200, 256)
         stx_mode = int.from_bytes(statx_buf[0x1c:0x1e], "big")
         self.assertTrue(stx_mode & 0o040000)  # S_IFDIR
+
+
+class TestSyscallAccess(unittest.TestCase):
+    """Tests for access syscall (syscall 33)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file.close()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.temp_file.name)
+        except OSError:
+            pass
+
+    def _write_string(self, addr: int, s: str) -> None:
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_access_existing_file(self):
+        """Test access on existing file returns success."""
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 33)  # access syscall
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname
+        self.cpu_state.registers.write_register(9, 0)  # F_OK (existence check)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_access_nonexistent_file(self):
+        """Test access on nonexistent file returns ENOENT."""
+        self._write_string(0x1000, "/nonexistent/path/file.txt")
+        self.cpu_state.registers.write_register(1, 33)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0)  # F_OK
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)  # ENOENT
+        self.assertTrue(self.cpu_state.icc.c)
+
+    def test_access_read_permission(self):
+        """Test access with R_OK on readable file."""
+        self._write_string(0x1000, self.temp_file.name)
+        self.cpu_state.registers.write_register(1, 33)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 4)  # R_OK
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallLstat(unittest.TestCase):
+    """Tests for lstat syscall (syscall 84)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x2000)
+        self.syscall = Syscall(self.cpu_state)
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_file = os.path.join(self.temp_dir, "testfile")
+        self.temp_link = os.path.join(self.temp_dir, "testlink")
+        # Create a regular file and a symlink
+        with open(self.temp_file, "w") as f:
+            f.write("test content")
+        os.symlink(self.temp_file, self.temp_link)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _write_string(self, addr: int, s: str) -> None:
+        self.cpu_state.memory.write(addr, s.encode() + b"\x00")
+
+    def test_lstat_regular_file(self):
+        """Test lstat on regular file returns success."""
+        self._write_string(0x1000, self.temp_file)
+        self.cpu_state.registers.write_register(1, 84)  # lstat syscall
+        self.cpu_state.registers.write_register(8, 0x1000)  # pathname
+        self.cpu_state.registers.write_register(9, 0x1100)  # stat buffer
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify it's a regular file (check st_mode at offset 0x14)
+        stat_buf = self.cpu_state.memory.read(0x1100, 104)
+        import struct
+        st_mode = struct.unpack(">I", stat_buf[0x14:0x18])[0]
+        self.assertTrue(st_mode & 0o100000)  # S_IFREG
+
+    def test_lstat_symlink(self):
+        """Test lstat on symlink returns symlink info (not target)."""
+        self._write_string(0x1000, self.temp_link)
+        self.cpu_state.registers.write_register(1, 84)  # lstat
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0x1100)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify it's a symlink (check st_mode at offset 0x14)
+        stat_buf = self.cpu_state.memory.read(0x1100, 104)
+        import struct
+        st_mode = struct.unpack(">I", stat_buf[0x14:0x18])[0]
+        self.assertTrue(st_mode & 0o120000)  # S_IFLNK
+
+    def test_lstat_nonexistent_file(self):
+        """Test lstat on nonexistent file returns ENOENT."""
+        self._write_string(0x1000, "/nonexistent/path/file.txt")
+        self.cpu_state.registers.write_register(1, 84)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 0x1100)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 2)  # ENOENT
+        self.assertTrue(self.cpu_state.icc.c)
+
+
+class TestSyscallPoll(unittest.TestCase):
+    """Tests for poll syscall (syscall 153)."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_poll_empty(self):
+        """Test poll with no fds returns 0."""
+        self.cpu_state.registers.write_register(1, 153)  # poll syscall
+        self.cpu_state.registers.write_register(8, 0x1000)  # fds pointer
+        self.cpu_state.registers.write_register(9, 0)  # nfds = 0
+        self.cpu_state.registers.write_register(10, 0)  # timeout = 0
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_poll_stdout_writable(self):
+        """Test poll on stdout returns POLLOUT."""
+        import struct
+        # Setup pollfd structure: fd=1 (stdout), events=POLLOUT(4), revents=0
+        pollfd = struct.pack(">ihh", 1, 4, 0)  # fd, events, revents
+        self.cpu_state.memory.write(0x1000, pollfd)
+
+        self.cpu_state.registers.write_register(1, 153)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 1)  # nfds = 1
+        self.cpu_state.registers.write_register(10, 0)  # timeout = 0 (return immediately)
+
+        self.syscall.handle()
+
+        # Should return 1 (one fd with events)
+        result = self.cpu_state.registers.read_register(8)
+        self.assertGreaterEqual(result, 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_poll_invalid_fd(self):
+        """Test poll with invalid fd sets POLLNVAL."""
+        import struct
+        # Setup pollfd with invalid fd
+        pollfd = struct.pack(">ihh", 999, 1, 0)  # invalid fd, POLLIN, revents=0
+        self.cpu_state.memory.write(0x1000, pollfd)
+
+        self.cpu_state.registers.write_register(1, 153)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 1)
+        self.cpu_state.registers.write_register(10, 0)
+
+        self.syscall.handle()
+
+        # Should return 1 and set POLLNVAL in revents
+        result = self.cpu_state.registers.read_register(8)
+        self.assertEqual(result, 1)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Check revents has POLLNVAL (0x20)
+        revents_data = self.cpu_state.memory.read(0x1006, 2)
+        revents = struct.unpack(">h", revents_data)[0]
+        self.assertEqual(revents & 0x20, 0x20)  # POLLNVAL
+
+    def test_poll_negative_fd_ignored(self):
+        """Test poll ignores negative fds."""
+        import struct
+        # Negative fd should be ignored
+        pollfd = struct.pack(">ihh", -1, 1, 0)
+        self.cpu_state.memory.write(0x1000, pollfd)
+
+        self.cpu_state.registers.write_register(1, 153)
+        self.cpu_state.registers.write_register(8, 0x1000)
+        self.cpu_state.registers.write_register(9, 1)
+        self.cpu_state.registers.write_register(10, 0)
+
+        self.syscall.handle()
+
+        # Should return 0 (negative fd ignored)
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+
+class TestSyscallTerminalIoctl(unittest.TestCase):
+    """Tests for terminal ioctl handling."""
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_tcgets_returns_termios(self):
+        """Test TCGETS ioctl returns termios structure."""
+        TCGETS = 0x40245408
+        self.cpu_state.registers.write_register(1, 54)  # ioctl
+        self.cpu_state.registers.write_register(8, 0)  # fd = stdin
+        self.cpu_state.registers.write_register(9, TCGETS)
+        self.cpu_state.registers.write_register(10, 0x1000)  # termios buffer
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify termios structure was written (36 bytes)
+        termios_data = self.cpu_state.memory.read(0x1000, 36)
+        self.assertEqual(len(termios_data), 36)
+
+    def test_tcsets_succeeds(self):
+        """Test TCSETS ioctl returns success."""
+        TCSETS = 0x80245409
+        # Write a valid termios structure first
+        import struct
+        termios_buf = bytearray(36)
+        struct.pack_into(">I", termios_buf, 0, 0x2D02)  # iflag
+        struct.pack_into(">I", termios_buf, 4, 0x0005)  # oflag
+        struct.pack_into(">I", termios_buf, 8, 0x00BF)  # cflag
+        struct.pack_into(">I", termios_buf, 12, 0x8A3B)  # lflag
+        self.cpu_state.memory.write(0x1000, bytes(termios_buf))
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, TCSETS)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tiocgwinsz_returns_window_size(self):
+        """Test TIOCGWINSZ returns window size structure."""
+        TIOCGWINSZ = 0x40087468
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCGWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Verify winsize structure was written (8 bytes)
+        winsize_data = self.cpu_state.memory.read(0x1000, 8)
+        self.assertEqual(len(winsize_data), 8)
+        # Should have reasonable default values (at least rows > 0, cols > 0)
+        import struct
+        rows, cols = struct.unpack(">HH", winsize_data[:4])
+        self.assertGreater(rows, 0)
+        self.assertGreater(cols, 0)
+
+    def test_tiocgwinsz_returns_reasonable_size(self):
+        """Test TIOCGWINSZ returns reasonable window dimensions.
+
+        This test catches endianness bugs where byte-swapped values would
+        produce impossibly large dimensions (e.g., 6144x20480 instead of 24x80).
+        """
+        TIOCGWINSZ = 0x40087468
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCGWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        winsize_data = self.cpu_state.memory.read(0x1000, 8)
+        import struct
+        rows, cols, xpix, ypix = struct.unpack(">HHHH", winsize_data)
+
+        # Reasonable terminal sizes: 1-500 rows, 1-1000 cols
+        # Byte-swapped values would be much larger (e.g., 0x1800=6144 for 24)
+        self.assertLessEqual(rows, 500, f"rows={rows} suggests endianness bug")
+        self.assertLessEqual(cols, 1000, f"cols={cols} suggests endianness bug")
+
+    def test_tcsetsw_succeeds(self):
+        """Test TCSETSW ioctl returns success."""
+        TCSETSW = 0x8024540A
+        import struct
+        termios_buf = bytearray(36)
+        struct.pack_into(">I", termios_buf, 0, 0x2D02)  # iflag
+        struct.pack_into(">I", termios_buf, 4, 0x0005)  # oflag
+        struct.pack_into(">I", termios_buf, 8, 0x00BF)  # cflag
+        struct.pack_into(">I", termios_buf, 12, 0x8A3B)  # lflag
+        self.cpu_state.memory.write(0x1000, bytes(termios_buf))
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, TCSETSW)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tcsetsf_succeeds(self):
+        """Test TCSETSF ioctl returns success."""
+        TCSETSF = 0x8024540B
+        import struct
+        termios_buf = bytearray(36)
+        struct.pack_into(">I", termios_buf, 0, 0x2D02)  # iflag
+        struct.pack_into(">I", termios_buf, 4, 0x0005)  # oflag
+        struct.pack_into(">I", termios_buf, 8, 0x00BF)  # cflag
+        struct.pack_into(">I", termios_buf, 12, 0x8A3B)  # lflag
+        self.cpu_state.memory.write(0x1000, bytes(termios_buf))
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 0)  # stdin
+        self.cpu_state.registers.write_register(9, TCSETSF)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tiocswinsz_succeeds(self):
+        """Test TIOCSWINSZ ioctl returns success."""
+        TIOCSWINSZ = 0x80087467
+        import struct
+        # Write a winsize structure: rows=25, cols=80, xpixel=0, ypixel=0
+        winsize = struct.pack(">HHHH", 25, 80, 0, 0)
+        self.cpu_state.memory.write(0x1000, winsize)
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCSWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+
+        self.assertEqual(self.cpu_state.registers.read_register(8), 0)
+        self.assertFalse(self.cpu_state.icc.c)
+
+    def test_tiocswinsz_stores_size_for_tiocgwinsz(self):
+        """Test TIOCSWINSZ stores window size that TIOCGWINSZ returns."""
+        import struct
+        TIOCSWINSZ = 0x80087467
+        TIOCGWINSZ = 0x40087468
+
+        # First, set a custom window size via TIOCSWINSZ
+        winsize = struct.pack(">HHHH", 50, 120, 800, 600)
+        self.cpu_state.memory.write(0x1000, winsize)
+
+        self.cpu_state.registers.write_register(1, 54)
+        self.cpu_state.registers.write_register(8, 1)  # stdout
+        self.cpu_state.registers.write_register(9, TIOCSWINSZ)
+        self.cpu_state.registers.write_register(10, 0x1000)
+
+        self.syscall.handle()
+        self.assertFalse(self.cpu_state.icc.c)
+
+        # Now verify window_size is stored in cpu_state
+        self.assertIsNotNone(self.cpu_state.window_size)
+        self.assertEqual(self.cpu_state.window_size, (50, 120, 800, 600))
+
+
+class TestSyscallTermiosNonCanonical(unittest.TestCase):
+    """Tests for SPARC to host termios c_cc translation in non-canonical mode.
+
+    SPARC and x86_64 have different c_cc indices for VMIN and VTIME:
+    - SPARC: VMIN=4, VTIME=5 (shared with VEOF/VEOL in canonical mode)
+    - x86_64: VMIN=6, VTIME=5, VEOF=4, VEOL=11
+
+    These tests verify the translation works correctly for raw/non-canonical mode
+    where vi and other interactive programs need VMIN/VTIME set properly.
+    """
+
+    def setUp(self):
+        self.cpu_state = CpuState()
+        self.cpu_state.memory.add_segment(0x1000, 0x1000)
+        self.syscall = Syscall(self.cpu_state)
+
+    def test_read_sparc_termios_noncanonical_vmin_vtime(self):
+        """Test that VMIN/VTIME are correctly translated from SPARC to host in non-canonical mode."""
+        import struct
+
+        # Create a SPARC termios structure with ICANON unset (non-canonical mode)
+        # SPARC termios: iflag(4) + oflag(4) + cflag(4) + lflag(4) + c_line(1) + c_cc(19)
+        buf = bytearray(36)
+
+        # Set flags - importantly, ICANON (0x2) is NOT set in lflag
+        iflag = 0x0000  # No input processing
+        oflag = 0x0000  # No output processing
+        cflag = 0x00BF  # CS8 | CREAD | CLOCAL
+        lflag = 0x0000  # ICANON not set - this is non-canonical mode!
+
+        struct.pack_into(">I", buf, 0, iflag)
+        struct.pack_into(">I", buf, 4, oflag)
+        struct.pack_into(">I", buf, 8, cflag)
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+
+        # Set SPARC c_cc values
+        # In non-canonical mode, SPARC index 4 is VMIN, index 5 is VTIME
+        sparc_vmin = 1   # Read at least 1 character
+        sparc_vtime = 0  # No timeout
+        buf[17 + 4] = sparc_vmin   # SPARC VMIN at index 4
+        buf[17 + 5] = sparc_vtime  # SPARC VTIME at index 5
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        # Call _read_sparc_termios
+        result = self.syscall._read_sparc_termios(0x1000)
+
+        # Result format: [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
+        host_cc = result[6]
+
+        # In x86_64, VMIN is at index 6, VTIME is at index 5
+        self.assertEqual(host_cc[6], sparc_vmin, "VMIN should be at x86_64 index 6")
+        self.assertEqual(host_cc[5], sparc_vtime, "VTIME should be at x86_64 index 5")
+
+        # VEOF should get a default value in non-canonical mode
+        self.assertEqual(host_cc[4], 0x04, "VEOF should be default Ctrl-D in non-canonical mode")
+
+    def test_read_sparc_termios_canonical_veof_veol(self):
+        """Test that VEOF/VEOL are correctly translated in canonical mode."""
+        import struct
+
+        buf = bytearray(36)
+
+        # Set ICANON in lflag - canonical mode
+        lflag = 0x0002  # ICANON is set
+
+        struct.pack_into(">I", buf, 0, 0)      # iflag
+        struct.pack_into(">I", buf, 4, 0)      # oflag
+        struct.pack_into(">I", buf, 8, 0x00BF) # cflag
+        struct.pack_into(">I", buf, 12, lflag)
+        buf[16] = 0  # c_line
+
+        # In canonical mode, SPARC index 4 is VEOF, index 5 is VEOL
+        sparc_veof = 0x04  # Ctrl-D
+        sparc_veol = 0x00  # No VEOL
+        buf[17 + 4] = sparc_veof
+        buf[17 + 5] = sparc_veol
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        result = self.syscall._read_sparc_termios(0x1000)
+        host_cc = result[6]
+
+        # In x86_64, VEOF is at index 4, VEOL is at index 11
+        self.assertEqual(host_cc[4], sparc_veof, "VEOF should be at x86_64 index 4")
+        self.assertEqual(host_cc[11], sparc_veol, "VEOL should be at x86_64 index 11")
+
+    def test_termios_roundtrip_noncanonical(self):
+        """Test that writing and reading termios in non-canonical mode preserves key values."""
+        import struct
+
+        # First write default termios
+        self.syscall._write_default_sparc_termios(0x1000)
+
+        # Read it back
+        termios_data = self.cpu_state.memory.read(0x1000, 36)
+
+        # Modify to non-canonical mode with specific VMIN/VTIME
+        buf = bytearray(termios_data)
+        # Clear ICANON in lflag (offset 12)
+        lflag = struct.unpack(">I", buf[12:16])[0]
+        lflag &= ~0x2  # Clear ICANON
+        struct.pack_into(">I", buf, 12, lflag)
+
+        # Set VMIN=1, VTIME=0 at SPARC indices
+        buf[17 + 4] = 1  # VMIN
+        buf[17 + 5] = 0  # VTIME
+
+        self.cpu_state.memory.write(0x1000, bytes(buf))
+
+        # Read and convert to host format
+        result = self.syscall._read_sparc_termios(0x1000)
+        host_cc = result[6]
+
+        # Verify VMIN/VTIME are at correct x86_64 indices
+        self.assertEqual(host_cc[6], 1, "VMIN=1 should be at x86_64 index 6")
+        self.assertEqual(host_cc[5], 0, "VTIME=0 should be at x86_64 index 5")
 
 
 if __name__ == "__main__":

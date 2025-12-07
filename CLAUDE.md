@@ -58,7 +58,7 @@
 - Paths not matching any passthrough prefix are translated through the sysroot as usual.
 
 ## Busybox Support
-- Busybox utilities (tar, gzip, etc.) from buildroot work with the emulator.
+- Busybox utilities (tar, gzip, vi, etc.) from buildroot work with the emulator.
 - Directory traversal is supported via `getdents64` syscall for recursive operations.
 - Example running tar:
   ```bash
@@ -75,6 +75,33 @@
   python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
     --passthrough /tmp \
     ~/work/repos/third-party/buildroot/output/target/bin/tar xvf /tmp/out.tar -C /tmp/output
+  ```
+
+## Vi Support
+- Interactive vi editor from busybox works with full terminal support.
+- Terminal ioctls implemented: TCGETS, TCSETS, TCSETSW, TCSETSF (termios), TIOCGWINSZ, TIOCSWINSZ (window size).
+- SPARC-to-x86_64 termios c_cc index translation handles raw mode correctly (VMIN/VTIME at different indices).
+- Additional syscalls for vi: `poll` (153), `access` (33), `lstat` (84).
+- Example running vi:
+  ```bash
+  # Show vi help
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    ~/work/repos/third-party/buildroot/output/target/bin/vi --help
+
+  # Edit a file (use --passthrough to access host files)
+  python -m sun4m --sysroot ~/work/repos/third-party/buildroot/output/target \
+    --passthrough /tmp \
+    ~/work/repos/third-party/buildroot/output/target/bin/vi /tmp/myfile.txt
+  ```
+
+## Profiling
+- Use `--profile [FILE]` to enable cProfile profiling and write stats to a file.
+- Default output file is `profile.stats` if no filename is specified.
+- Profile stats are written on normal exit or Ctrl-C (KeyboardInterrupt).
+- Example:
+  ```bash
+  python -m sun4m --profile my_profile.stats --sysroot ~/work/repos/third-party/buildroot/output/target \
+    ~/work/repos/third-party/buildroot/output/target/bin/gzip --help
   ```
 
 ## Architecture Overview
