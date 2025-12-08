@@ -113,3 +113,17 @@
 - SPARC CALL semantics: store the call-site PC (not PC+4) into `%o7`; `retl` adds 8 to resume after the delay slot.
 - `elf.py` provides a loader for 32-bit big-endian SPARC ELFs supporting both static and dynamic executables. It maps PT_LOAD segments, parses PT_INTERP for the dynamic linker path, processes R_SPARC_RELATIVE relocations for PIE/shared objects, and returns `ElfInfo` with entry point, program header addresses, and interpreter path.
 - For dynamic executables, `machine.py` loads the interpreter at a separate base address (0x40000000), sets up the auxiliary vector (auxv) with AT_PHDR, AT_ENTRY, AT_RANDOM, etc., and transfers control to the dynamic linker.
+
+## Floating-Point Unit (FPU)
+- `FPUState` in `cpu.py` implements the SPARC V8 floating-point unit with 32 single-precision registers (`%f0`-`%f31`) and the FSR (Floating-point State Register).
+- Double-precision uses even-odd register pairs (`%f0/%f1`, `%f2/%f3`, etc.)—16 doubles total.
+- FP registers are stored as raw 32-bit integers (IEEE 754 binary representation); use `read_single`/`write_single` or `read_double`/`write_double` for float conversions.
+- FSR bits 11-10 hold FCC (Floating-point Condition Codes): 0=Equal, 1=Less, 2=Greater, 3=Unordered (NaN).
+- Implemented FP instructions in `instruction.py`:
+  - Load/Store: `LDF`, `LDDF`, `STF`, `STDF`, `LDFSR`, `STFSR`
+  - Arithmetic: `FADDs/d`, `FSUBs/d`, `FMULs/d`, `FDIVs/d`, `FSQRTs/d`, `FsMULd`
+  - Conversions: `FiTOs/d`, `FsTOi`, `FdTOi`, `FsTOd`, `FdTOs`
+  - Utility: `FMOVs`, `FNEGs`, `FABSs`
+  - Compare: `FCMPs/d`, `FCMPEs/d` (sets FCC in FSR)
+  - Branch: `FBfcc` (all 16 conditions: FBA, FBN, FBE, FBNE, FBL, FBG, etc.)
+- FP exceptions (overflow, underflow, etc.) are not currently implemented; FSR exception flags are ignored.

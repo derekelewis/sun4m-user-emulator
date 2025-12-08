@@ -69,6 +69,7 @@ make -C bin clean all
 
 - `Machine` owns `SystemMemory` segments and a `CpuState`; execute with `machine.cpu.step()` or `run()`
 - Register windows follow SPARC V8 semantics—each window stores ins and locals; outs resolve via CWP overlap
+- Floating-point unit (FPU) with 32 single-precision registers, double-precision via register pairs, and full FP instruction support (load/store, arithmetic, conversions, comparisons, FBfcc branches)
 - ELF loader supports both static and dynamically linked executables, including PT_INTERP parsing and R_SPARC_RELATIVE relocations
 - Dynamic linking works by loading the uClibc interpreter and setting up the auxiliary vector (auxv)
 - Syscalls include file I/O (open, read, write, close, lseek, stat, lstat, access, poll, mkdir, getdents64), memory mapping (mmap2, munmap, mprotect), process info (getpid, getuid, umask, etc.), and terminal ioctls (termios, window size)
