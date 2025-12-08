@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import os
+import struct
 import sys
 from dataclasses import dataclass, field
 from typing import IO
@@ -295,6 +297,92 @@ class ICC:
             self.v = (op1_sign == op2_sign) and (result_sign != op1_sign)
 
 
+# FCC (Floating-point Condition Codes) values
+FCC_E = 0  # Equal
+FCC_L = 1  # Less than
+FCC_G = 2  # Greater than
+FCC_U = 3  # Unordered (NaN)
+
+
+class FPUState:
+    """Floating-Point Unit state for SPARC V8.
+
+    The FPU has 32 single-precision (32-bit) registers that can also be
+    accessed as 16 double-precision (64-bit) register pairs using even
+    register numbers.
+
+    The FSR (Floating-point State Register) contains:
+    - Bits 11-10: FCC (Floating-point Condition Codes)
+    - Bits 4-0: Exception flags (not currently implemented)
+    - Bits 31-30: Rounding direction (not currently implemented)
+    """
+
+    def __init__(self):
+        # 32 single-precision registers stored as raw 32-bit integers
+        # (IEEE 754 binary32 representation)
+        self.f: list[int] = [0] * 32
+        # FSR - Floating-point State Register
+        self.fsr: int = 0
+
+    def read_single(self, reg: int) -> float:
+        """Read single-precision float from register."""
+        raw = self.f[reg].to_bytes(4, "big")
+        return struct.unpack(">f", raw)[0]
+
+    def write_single(self, reg: int, value: float) -> None:
+        """Write single-precision float to register."""
+        raw = struct.pack(">f", value)
+        self.f[reg] = int.from_bytes(raw, "big")
+
+    def read_double(self, reg: int) -> float:
+        """Read double-precision float from even register pair.
+
+        Double-precision uses two consecutive registers (even, even+1).
+        """
+        if reg & 1:
+            raise ValueError(f"double-precision requires even register, got {reg}")
+        high = self.f[reg].to_bytes(4, "big")
+        low = self.f[reg + 1].to_bytes(4, "big")
+        return struct.unpack(">d", high + low)[0]
+
+    def write_double(self, reg: int, value: float) -> None:
+        """Write double-precision float to even register pair."""
+        if reg & 1:
+            raise ValueError(f"double-precision requires even register, got {reg}")
+        raw = struct.pack(">d", value)
+        self.f[reg] = int.from_bytes(raw[:4], "big")
+        self.f[reg + 1] = int.from_bytes(raw[4:], "big")
+
+    def read_raw(self, reg: int) -> int:
+        """Read raw 32-bit value from FP register."""
+        return self.f[reg]
+
+    def write_raw(self, reg: int, value: int) -> None:
+        """Write raw 32-bit value to FP register."""
+        self.f[reg] = value & 0xFFFFFFFF
+
+    @property
+    def fcc(self) -> int:
+        """Get FCC (bits 11-10 of FSR)."""
+        return (self.fsr >> 10) & 0x3
+
+    @fcc.setter
+    def fcc(self, value: int) -> None:
+        """Set FCC (bits 11-10 of FSR)."""
+        self.fsr = (self.fsr & ~0xC00) | ((value & 0x3) << 10)
+
+    def compare(self, a: float, b: float) -> None:
+        """Compare two floats and set FCC accordingly."""
+        if math.isnan(a) or math.isnan(b):
+            self.fcc = FCC_U  # Unordered
+        elif a == b:
+            self.fcc = FCC_E  # Equal
+        elif a < b:
+            self.fcc = FCC_L  # Less
+        else:
+            self.fcc = FCC_G  # Greater
+
+
 class CpuState:
     """Represents the architectural state of the emulated CPU."""
 
@@ -311,6 +399,7 @@ class CpuState:
         self.psr: int = 0
         self.y: int = 0  # Y register for multiply/divide
         self.icc: ICC = ICC()  # Integer Condition Codes
+        self.fpu: FPUState = FPUState()  # Floating-Point Unit state
         self.registers: RegisterFile = RegisterFile()
         # Memory is shared with Machine; fall back to a private instance for
         # standalone CpuState usage in tests.

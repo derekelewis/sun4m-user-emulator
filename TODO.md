@@ -95,7 +95,7 @@ TODOs
     - [x] tar (create/extract archives with directory traversal)
     - [x] vi (interactive text editor with terminal support)
 7. Future work
-    - [ ] Floating-point instructions (FPU)
+    - [x] Floating-point instructions (FPU)
     - [ ] Memory protection (segment permissions)
     - [ ] Alignment trap handling (currently raises ValueError)
     - [ ] Window overflow/underflow traps (currently avoided with 64 windows)

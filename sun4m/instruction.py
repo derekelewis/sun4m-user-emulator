@@ -530,3 +530,298 @@ class Format3Instruction(Instruction):
         else:
             inst_string += f", rs2: {self.rs2}"
         return inst_string
+
+
+class FPLoadStoreInstruction(Instruction):
+    """Floating-point load/store instructions (Format 3, op=3).
+
+    Handles: LDF, LDDF, LDFSR, STF, STDF, STFSR
+    """
+
+    def __init__(self, inst: int):
+        super().__init__(inst)
+        self.op3: int = (inst >> 19) & 0b111111
+        self.rd: int = (inst >> 25) & 0b11111  # FP register
+        self.rs1: int = (inst >> 14) & 0b11111
+        self.i: int = (inst >> 13) & 0b1
+        if self.i:
+            simm13 = inst & 0b1111111111111
+            if simm13 >> 12:  # negative signed
+                simm13 -= 0x2000
+            self.simm13: int = simm13
+        else:
+            self.rs2: int = inst & 0b11111
+
+    def execute(self, cpu_state: CpuState) -> None:
+        # Compute effective address
+        rs1_val = cpu_state.registers.read_register(self.rs1)
+        if self.i:
+            addr = (rs1_val + self.simm13) & 0xFFFFFFFF
+        else:
+            rs2_val = cpu_state.registers.read_register(self.rs2)
+            addr = (rs1_val + rs2_val) & 0xFFFFFFFF
+
+        match self.op3:
+            case 0b100000:  # LDF (load float, single)
+                data = cpu_state.memory.read(addr, 4)
+                cpu_state.fpu.write_raw(self.rd, int.from_bytes(data, "big"))
+            case 0b100011:  # LDDF (load double float)
+                if self.rd & 1:
+                    raise ValueError(f"LDDF: rd={self.rd} must be even")
+                if addr & 0x7:
+                    raise ValueError(f"LDDF: address {addr:#x} not 8-byte aligned")
+                high_bytes = cpu_state.memory.read(addr, 4)
+                low_bytes = cpu_state.memory.read(addr + 4, 4)
+                cpu_state.fpu.write_raw(self.rd, int.from_bytes(high_bytes, "big"))
+                cpu_state.fpu.write_raw(self.rd + 1, int.from_bytes(low_bytes, "big"))
+            case 0b100001:  # LDFSR (load FSR)
+                data = cpu_state.memory.read(addr, 4)
+                cpu_state.fpu.fsr = int.from_bytes(data, "big")
+            case 0b100100:  # STF (store float, single)
+                val = cpu_state.fpu.read_raw(self.rd)
+                cpu_state.memory.write(addr, val.to_bytes(4, "big"))
+            case 0b100111:  # STDF (store double float)
+                if self.rd & 1:
+                    raise ValueError(f"STDF: rd={self.rd} must be even")
+                if addr & 0x7:
+                    raise ValueError(f"STDF: address {addr:#x} not 8-byte aligned")
+                high_val = cpu_state.fpu.read_raw(self.rd)
+                low_val = cpu_state.fpu.read_raw(self.rd + 1)
+                cpu_state.memory.write(addr, high_val.to_bytes(4, "big"))
+                cpu_state.memory.write(addr + 4, low_val.to_bytes(4, "big"))
+            case 0b100101:  # STFSR (store FSR)
+                cpu_state.memory.write(addr, cpu_state.fpu.fsr.to_bytes(4, "big"))
+            case _:
+                raise ValueError(f"unimplemented FP load/store opcode: {self.op3:#08b}")
+
+
+class FPop1Instruction(Instruction):
+    """Floating-point operate instructions (Format 3, op=2, op3=0b110100).
+
+    Handles arithmetic, conversions, and utility FP operations.
+    Uses opf field (bits 13-5) to distinguish operations.
+    """
+
+    def __init__(self, inst: int):
+        super().__init__(inst)
+        self.rd: int = (inst >> 25) & 0b11111
+        self.rs1: int = (inst >> 14) & 0b11111
+        self.rs2: int = inst & 0b11111
+        self.opf: int = (inst >> 5) & 0x1FF
+
+    def execute(self, cpu_state: CpuState) -> None:
+        import math
+
+        fpu = cpu_state.fpu
+
+        match self.opf:
+            # Move/Negate/Abs (single only, operate on raw bits)
+            case 0x001:  # FMOVs
+                fpu.write_raw(self.rd, fpu.read_raw(self.rs2))
+            case 0x005:  # FNEGs
+                val = fpu.read_raw(self.rs2)
+                fpu.write_raw(self.rd, val ^ 0x80000000)  # flip sign bit
+            case 0x009:  # FABSs
+                val = fpu.read_raw(self.rs2)
+                fpu.write_raw(self.rd, val & 0x7FFFFFFF)  # clear sign bit
+
+            # Square root
+            case 0x029:  # FSQRTs
+                fs = fpu.read_single(self.rs2)
+                fpu.write_single(self.rd, math.sqrt(fs))
+            case 0x02A:  # FSQRTd
+                fd = fpu.read_double(self.rs2)
+                fpu.write_double(self.rd, math.sqrt(fd))
+
+            # Add
+            case 0x041:  # FADDs
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.write_single(self.rd, a + b)
+            case 0x042:  # FADDd
+                a = fpu.read_double(self.rs1)
+                b = fpu.read_double(self.rs2)
+                fpu.write_double(self.rd, a + b)
+
+            # Subtract
+            case 0x045:  # FSUBs
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.write_single(self.rd, a - b)
+            case 0x046:  # FSUBd
+                a = fpu.read_double(self.rs1)
+                b = fpu.read_double(self.rs2)
+                fpu.write_double(self.rd, a - b)
+
+            # Multiply
+            case 0x049:  # FMULs
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.write_single(self.rd, a * b)
+            case 0x04A:  # FMULd
+                a = fpu.read_double(self.rs1)
+                b = fpu.read_double(self.rs2)
+                fpu.write_double(self.rd, a * b)
+
+            # Divide
+            case 0x04D:  # FDIVs
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.write_single(self.rd, a / b)
+            case 0x04E:  # FDIVd
+                a = fpu.read_double(self.rs1)
+                b = fpu.read_double(self.rs2)
+                fpu.write_double(self.rd, a / b)
+
+            # FsMULd - multiply singles to produce double
+            case 0x069:  # FsMULd
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.write_double(self.rd, float(a) * float(b))
+
+            # Integer to float conversions
+            case 0x0C4:  # FiTOs - integer to single
+                raw = fpu.read_raw(self.rs2)
+                # Interpret as signed 32-bit integer
+                if raw & 0x80000000:
+                    ival = raw - 0x100000000
+                else:
+                    ival = raw
+                fpu.write_single(self.rd, float(ival))
+            case 0x0C8:  # FiTOd - integer to double
+                raw = fpu.read_raw(self.rs2)
+                if raw & 0x80000000:
+                    ival = raw - 0x100000000
+                else:
+                    ival = raw
+                fpu.write_double(self.rd, float(ival))
+
+            # Float to integer conversions (truncate toward zero)
+            case 0x0D1:  # FsTOi - single to integer
+                fval_s = fpu.read_single(self.rs2)
+                ival_s = int(fval_s)
+                # Clamp to 32-bit signed range
+                if ival_s > 0x7FFFFFFF:
+                    ival_s = 0x7FFFFFFF
+                elif ival_s < -0x80000000:
+                    ival_s = -0x80000000
+                fpu.write_raw(self.rd, ival_s & 0xFFFFFFFF)
+            case 0x0D2:  # FdTOi - double to integer
+                fval_d = fpu.read_double(self.rs2)
+                ival_d = int(fval_d)
+                if ival_d > 0x7FFFFFFF:
+                    ival_d = 0x7FFFFFFF
+                elif ival_d < -0x80000000:
+                    ival_d = -0x80000000
+                fpu.write_raw(self.rd, ival_d & 0xFFFFFFFF)
+
+            # Single/double conversions
+            case 0x0C9:  # FsTOd - single to double
+                src_s = fpu.read_single(self.rs2)
+                fpu.write_double(self.rd, float(src_s))
+            case 0x0C6:  # FdTOs - double to single
+                src_d = fpu.read_double(self.rs2)
+                fpu.write_single(self.rd, src_d)
+
+            case _:
+                raise ValueError(f"unimplemented FPop1 opf: {self.opf:#05x}")
+
+
+class FPop2Instruction(Instruction):
+    """Floating-point compare instructions (Format 3, op=2, op3=0b110101).
+
+    Handles: FCMPs, FCMPd, FCMPEs, FCMPEd
+    """
+
+    def __init__(self, inst: int):
+        super().__init__(inst)
+        self.rs1: int = (inst >> 14) & 0b11111
+        self.rs2: int = inst & 0b11111
+        self.opf: int = (inst >> 5) & 0x1FF
+
+    def execute(self, cpu_state: CpuState) -> None:
+        fpu = cpu_state.fpu
+
+        match self.opf:
+            case 0x051 | 0x055:  # FCMPs, FCMPEs
+                a = fpu.read_single(self.rs1)
+                b = fpu.read_single(self.rs2)
+                fpu.compare(a, b)
+            case 0x052 | 0x056:  # FCMPd, FCMPEd
+                a = fpu.read_double(self.rs1)
+                b = fpu.read_double(self.rs2)
+                fpu.compare(a, b)
+            case _:
+                raise ValueError(f"unimplemented FPop2 opf: {self.opf:#05x}")
+
+
+class FBfccInstruction(Instruction):
+    """Floating-point branch on condition codes (Format 2, op=0, op2=0b110).
+
+    Branches based on FCC (floating-point condition codes) in the FSR.
+    """
+
+    def __init__(self, inst: int):
+        super().__init__(inst)
+        self.cond: int = (inst >> 25) & 0b1111
+        self.a: int = (inst >> 29) & 0b1  # annul bit
+        disp22: int = inst & 0x3FFFFF
+        # Sign extend disp22
+        if disp22 & 0x200000:
+            disp22 |= 0xFFC00000
+            self.disp22: int = disp22 - 0x100000000
+        else:
+            self.disp22 = disp22
+
+    def execute(self, cpu_state: CpuState) -> None:
+        from sun4m.cpu import FCC_E, FCC_L, FCC_G, FCC_U
+
+        fcc = cpu_state.fpu.fcc
+        take_branch: bool = False
+
+        # FCC values: E=0, L=1, G=2, U=3
+        match self.cond:
+            case 0b0000:  # FBN (never)
+                take_branch = False
+            case 0b1000:  # FBA (always)
+                take_branch = True
+            case 0b0111:  # FBU (unordered)
+                take_branch = fcc == FCC_U
+            case 0b0110:  # FBG (greater)
+                take_branch = fcc == FCC_G
+            case 0b0101:  # FBUG (unordered or greater)
+                take_branch = fcc in (FCC_U, FCC_G)
+            case 0b0100:  # FBL (less)
+                take_branch = fcc == FCC_L
+            case 0b0011:  # FBUL (unordered or less)
+                take_branch = fcc in (FCC_U, FCC_L)
+            case 0b0010:  # FBLG (less or greater)
+                take_branch = fcc in (FCC_L, FCC_G)
+            case 0b0001:  # FBNE (not equal)
+                take_branch = fcc != FCC_E
+            case 0b1001:  # FBE (equal)
+                take_branch = fcc == FCC_E
+            case 0b1010:  # FBUE (unordered or equal)
+                take_branch = fcc in (FCC_U, FCC_E)
+            case 0b1011:  # FBGE (greater or equal)
+                take_branch = fcc in (FCC_G, FCC_E)
+            case 0b1100:  # FBUGE (unordered, greater or equal)
+                take_branch = fcc in (FCC_U, FCC_G, FCC_E)
+            case 0b1101:  # FBLE (less or equal)
+                take_branch = fcc in (FCC_L, FCC_E)
+            case 0b1110:  # FBULE (unordered, less or equal)
+                take_branch = fcc in (FCC_U, FCC_L, FCC_E)
+            case 0b1111:  # FBO (ordered)
+                take_branch = fcc != FCC_U
+            case _:
+                raise ValueError(f"unknown FBfcc condition: {self.cond:#06b}")
+
+        # Check if this is an unconditional branch (FBA or FBN)
+        is_unconditional = self.cond in (0b1000, 0b0000)
+
+        if take_branch:
+            cpu_state.npc = (cpu_state.pc + (self.disp22 << 2)) & 0xFFFFFFFF
+            if self.a and is_unconditional:
+                cpu_state.annul_next = True
+        elif self.a:
+            cpu_state.annul_next = True
