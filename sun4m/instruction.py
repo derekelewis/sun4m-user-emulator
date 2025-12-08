@@ -4,15 +4,10 @@ import math
 from typing import TYPE_CHECKING
 
 from .syscall import Syscall
+from .constants import FCC_E, FCC_L, FCC_G, FCC_U, sign_extend
 
 if TYPE_CHECKING:
     from .cpu import CpuState
-
-# FCC (Floating-point Condition Codes) values - duplicated from cpu.py to avoid circular import
-_FCC_E = 0  # Equal
-_FCC_L = 1  # Less than
-_FCC_G = 2  # Greater than
-_FCC_U = 3  # Unordered (NaN)
 
 
 class Instruction:
@@ -552,10 +547,7 @@ class FPLoadStoreInstruction(Instruction):
         self.rs1: int = (inst >> 14) & 0b11111
         self.i: int = (inst >> 13) & 0b1
         if self.i:
-            simm13 = inst & 0b1111111111111
-            if simm13 >> 12:  # negative signed
-                simm13 -= 0x2000
-            self.simm13: int = simm13
+            self.simm13: int = sign_extend(inst & 0x1FFF, 13)
         else:
             self.rs2: int = inst & 0b11111
 
@@ -718,20 +710,32 @@ class FPop1Instruction(Instruction):
             # Float to integer conversions (truncate toward zero)
             case 0x0D1:  # FsTOi - single to integer
                 fval_s = fpu.read_single(self.rs2)
-                ival_s = int(fval_s)
-                # Clamp to 32-bit signed range
-                if ival_s > 0x7FFFFFFF:
+                # Handle NaN and infinity (SPARC V8 returns max/min int)
+                if math.isnan(fval_s):
                     ival_s = 0x7FFFFFFF
-                elif ival_s < -0x80000000:
-                    ival_s = -0x80000000
+                elif math.isinf(fval_s):
+                    ival_s = 0x7FFFFFFF if fval_s > 0 else -0x80000000
+                else:
+                    ival_s = int(fval_s)
+                    # Clamp to 32-bit signed range
+                    if ival_s > 0x7FFFFFFF:
+                        ival_s = 0x7FFFFFFF
+                    elif ival_s < -0x80000000:
+                        ival_s = -0x80000000
                 fpu.write_raw(self.rd, ival_s & 0xFFFFFFFF)
             case 0x0D2:  # FdTOi - double to integer
                 fval_d = fpu.read_double(self.rs2)
-                ival_d = int(fval_d)
-                if ival_d > 0x7FFFFFFF:
+                # Handle NaN and infinity (SPARC V8 returns max/min int)
+                if math.isnan(fval_d):
                     ival_d = 0x7FFFFFFF
-                elif ival_d < -0x80000000:
-                    ival_d = -0x80000000
+                elif math.isinf(fval_d):
+                    ival_d = 0x7FFFFFFF if fval_d > 0 else -0x80000000
+                else:
+                    ival_d = int(fval_d)
+                    if ival_d > 0x7FFFFFFF:
+                        ival_d = 0x7FFFFFFF
+                    elif ival_d < -0x80000000:
+                        ival_d = -0x80000000
                 fpu.write_raw(self.rd, ival_d & 0xFFFFFFFF)
 
             # Single/double conversions
@@ -784,13 +788,7 @@ class FBfccInstruction(Instruction):
         super().__init__(inst)
         self.cond: int = (inst >> 25) & 0b1111
         self.a: int = (inst >> 29) & 0b1  # annul bit
-        disp22: int = inst & 0x3FFFFF
-        # Sign extend disp22
-        if disp22 & 0x200000:
-            disp22 |= 0xFFC00000
-            self.disp22: int = disp22 - 0x100000000
-        else:
-            self.disp22 = disp22
+        self.disp22: int = sign_extend(inst & 0x3FFFFF, 22)
 
     def execute(self, cpu_state: CpuState) -> None:
         fcc = cpu_state.fpu.fcc
@@ -803,33 +801,33 @@ class FBfccInstruction(Instruction):
             case 0b1000:  # FBA (always)
                 take_branch = True
             case 0b0111:  # FBU (unordered)
-                take_branch = fcc == _FCC_U
+                take_branch = fcc == FCC_U
             case 0b0110:  # FBG (greater)
-                take_branch = fcc == _FCC_G
+                take_branch = fcc == FCC_G
             case 0b0101:  # FBUG (unordered or greater)
-                take_branch = fcc in (_FCC_U, _FCC_G)
+                take_branch = fcc in (FCC_U, FCC_G)
             case 0b0100:  # FBL (less)
-                take_branch = fcc == _FCC_L
+                take_branch = fcc == FCC_L
             case 0b0011:  # FBUL (unordered or less)
-                take_branch = fcc in (_FCC_U, _FCC_L)
+                take_branch = fcc in (FCC_U, FCC_L)
             case 0b0010:  # FBLG (less or greater)
-                take_branch = fcc in (_FCC_L, _FCC_G)
+                take_branch = fcc in (FCC_L, FCC_G)
             case 0b0001:  # FBNE (not equal)
-                take_branch = fcc != _FCC_E
+                take_branch = fcc != FCC_E
             case 0b1001:  # FBE (equal)
-                take_branch = fcc == _FCC_E
+                take_branch = fcc == FCC_E
             case 0b1010:  # FBUE (unordered or equal)
-                take_branch = fcc in (_FCC_U, _FCC_E)
+                take_branch = fcc in (FCC_U, FCC_E)
             case 0b1011:  # FBGE (greater or equal)
-                take_branch = fcc in (_FCC_G, _FCC_E)
+                take_branch = fcc in (FCC_G, FCC_E)
             case 0b1100:  # FBUGE (unordered, greater or equal)
-                take_branch = fcc in (_FCC_U, _FCC_G, _FCC_E)
+                take_branch = fcc in (FCC_U, FCC_G, FCC_E)
             case 0b1101:  # FBLE (less or equal)
-                take_branch = fcc in (_FCC_L, _FCC_E)
+                take_branch = fcc in (FCC_L, FCC_E)
             case 0b1110:  # FBULE (unordered, less or equal)
-                take_branch = fcc in (_FCC_U, _FCC_L, _FCC_E)
+                take_branch = fcc in (FCC_U, FCC_L, FCC_E)
             case 0b1111:  # FBO (ordered)
-                take_branch = fcc != _FCC_U
+                take_branch = fcc != FCC_U
             case _:
                 raise ValueError(f"unknown FBfcc condition: {self.cond:#06b}")
 

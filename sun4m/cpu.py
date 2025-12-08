@@ -10,6 +10,7 @@ from typing import IO
 from sun4m.register import RegisterFile
 from sun4m.memory import SystemMemory
 from sun4m.decoder import decode
+from sun4m.constants import FCC_E, FCC_L, FCC_G, FCC_U
 
 
 @dataclass
@@ -295,13 +296,6 @@ class ICC:
             op2_sign = bool(op2 & 0x80000000)
             result_sign = bool(result & 0x80000000)
             self.v = (op1_sign == op2_sign) and (result_sign != op1_sign)
-
-
-# FCC (Floating-point Condition Codes) values
-FCC_E = 0  # Equal
-FCC_L = 1  # Less than
-FCC_G = 2  # Greater than
-FCC_U = 3  # Unordered (NaN)
 
 
 class FPUState:

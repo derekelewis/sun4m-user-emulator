@@ -379,6 +379,60 @@ class TestFPop1Instruction(unittest.TestCase):
         fdtoi.execute(self.cpu_state)
         self.assertEqual(self.cpu_state.fpu.read_raw(4), 123)
 
+    def test_fstoi_nan(self):
+        # FsTOi with NaN should return max positive int
+        inst = 0x85A01A21  # FsTOi %f1, %f2
+        fstoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_single(1, float("nan"))
+        fstoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(2), 0x7FFFFFFF)
+
+    def test_fstoi_positive_inf(self):
+        # FsTOi with +inf should return max positive int
+        inst = 0x85A01A21  # FsTOi %f1, %f2
+        fstoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_single(1, float("inf"))
+        fstoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(2), 0x7FFFFFFF)
+
+    def test_fstoi_negative_inf(self):
+        # FsTOi with -inf should return min negative int
+        inst = 0x85A01A21  # FsTOi %f1, %f2
+        fstoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_single(1, float("-inf"))
+        fstoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(2), 0x80000000)
+
+    def test_fdtoi_nan(self):
+        # FdTOi with NaN should return max positive int
+        inst = 0x89A01A42  # FdTOi %f2, %f4
+        fdtoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_double(2, float("nan"))
+        fdtoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(4), 0x7FFFFFFF)
+
+    def test_fdtoi_positive_inf(self):
+        # FdTOi with +inf should return max positive int
+        inst = 0x89A01A42  # FdTOi %f2, %f4
+        fdtoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_double(2, float("inf"))
+        fdtoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(4), 0x7FFFFFFF)
+
+    def test_fdtoi_negative_inf(self):
+        # FdTOi with -inf should return min negative int
+        inst = 0x89A01A42  # FdTOi %f2, %f4
+        fdtoi = FPop1Instruction(inst)
+
+        self.cpu_state.fpu.write_double(2, float("-inf"))
+        fdtoi.execute(self.cpu_state)
+        self.assertEqual(self.cpu_state.fpu.read_raw(4), 0x80000000)
+
     def test_fstod(self):
         # FsTOd %f1, %f2 (opf=0x0C9)
         inst = 0x85A01921
