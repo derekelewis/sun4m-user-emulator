@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from .syscall import Syscall
 
 if TYPE_CHECKING:
     from .cpu import CpuState
+
+# FCC (Floating-point Condition Codes) values - duplicated from cpu.py to avoid circular import
+_FCC_E = 0  # Equal
+_FCC_L = 1  # Less than
+_FCC_G = 2  # Greater than
+_FCC_U = 3  # Unordered (NaN)
 
 
 class Instruction:
@@ -563,6 +570,8 @@ class FPLoadStoreInstruction(Instruction):
 
         match self.op3:
             case 0b100000:  # LDF (load float, single)
+                if addr & 0x3:
+                    raise ValueError(f"LDF: address {addr:#x} not 4-byte aligned")
                 data = cpu_state.memory.read(addr, 4)
                 cpu_state.fpu.write_raw(self.rd, int.from_bytes(data, "big"))
             case 0b100011:  # LDDF (load double float)
@@ -575,9 +584,13 @@ class FPLoadStoreInstruction(Instruction):
                 cpu_state.fpu.write_raw(self.rd, int.from_bytes(high_bytes, "big"))
                 cpu_state.fpu.write_raw(self.rd + 1, int.from_bytes(low_bytes, "big"))
             case 0b100001:  # LDFSR (load FSR)
+                if addr & 0x3:
+                    raise ValueError(f"LDFSR: address {addr:#x} not 4-byte aligned")
                 data = cpu_state.memory.read(addr, 4)
                 cpu_state.fpu.fsr = int.from_bytes(data, "big")
             case 0b100100:  # STF (store float, single)
+                if addr & 0x3:
+                    raise ValueError(f"STF: address {addr:#x} not 4-byte aligned")
                 val = cpu_state.fpu.read_raw(self.rd)
                 cpu_state.memory.write(addr, val.to_bytes(4, "big"))
             case 0b100111:  # STDF (store double float)
@@ -590,6 +603,8 @@ class FPLoadStoreInstruction(Instruction):
                 cpu_state.memory.write(addr, high_val.to_bytes(4, "big"))
                 cpu_state.memory.write(addr + 4, low_val.to_bytes(4, "big"))
             case 0b100101:  # STFSR (store FSR)
+                if addr & 0x3:
+                    raise ValueError(f"STFSR: address {addr:#x} not 4-byte aligned")
                 cpu_state.memory.write(addr, cpu_state.fpu.fsr.to_bytes(4, "big"))
             case _:
                 raise ValueError(f"unimplemented FP load/store opcode: {self.op3:#08b}")
@@ -610,8 +625,6 @@ class FPop1Instruction(Instruction):
         self.opf: int = (inst >> 5) & 0x1FF
 
     def execute(self, cpu_state: CpuState) -> None:
-        import math
-
         fpu = cpu_state.fpu
 
         match self.opf:
@@ -628,10 +641,16 @@ class FPop1Instruction(Instruction):
             # Square root
             case 0x029:  # FSQRTs
                 fs = fpu.read_single(self.rs2)
-                fpu.write_single(self.rd, math.sqrt(fs))
+                if fs < 0:
+                    fpu.write_single(self.rd, float("nan"))
+                else:
+                    fpu.write_single(self.rd, math.sqrt(fs))
             case 0x02A:  # FSQRTd
                 fd = fpu.read_double(self.rs2)
-                fpu.write_double(self.rd, math.sqrt(fd))
+                if fd < 0:
+                    fpu.write_double(self.rd, float("nan"))
+                else:
+                    fpu.write_double(self.rd, math.sqrt(fd))
 
             # Add
             case 0x041:  # FADDs
@@ -677,7 +696,7 @@ class FPop1Instruction(Instruction):
             case 0x069:  # FsMULd
                 a = fpu.read_single(self.rs1)
                 b = fpu.read_single(self.rs2)
-                fpu.write_double(self.rd, float(a) * float(b))
+                fpu.write_double(self.rd, a * b)
 
             # Integer to float conversions
             case 0x0C4:  # FiTOs - integer to single
@@ -774,8 +793,6 @@ class FBfccInstruction(Instruction):
             self.disp22 = disp22
 
     def execute(self, cpu_state: CpuState) -> None:
-        from sun4m.cpu import FCC_E, FCC_L, FCC_G, FCC_U
-
         fcc = cpu_state.fpu.fcc
         take_branch: bool = False
 
@@ -786,33 +803,33 @@ class FBfccInstruction(Instruction):
             case 0b1000:  # FBA (always)
                 take_branch = True
             case 0b0111:  # FBU (unordered)
-                take_branch = fcc == FCC_U
+                take_branch = fcc == _FCC_U
             case 0b0110:  # FBG (greater)
-                take_branch = fcc == FCC_G
+                take_branch = fcc == _FCC_G
             case 0b0101:  # FBUG (unordered or greater)
-                take_branch = fcc in (FCC_U, FCC_G)
+                take_branch = fcc in (_FCC_U, _FCC_G)
             case 0b0100:  # FBL (less)
-                take_branch = fcc == FCC_L
+                take_branch = fcc == _FCC_L
             case 0b0011:  # FBUL (unordered or less)
-                take_branch = fcc in (FCC_U, FCC_L)
+                take_branch = fcc in (_FCC_U, _FCC_L)
             case 0b0010:  # FBLG (less or greater)
-                take_branch = fcc in (FCC_L, FCC_G)
+                take_branch = fcc in (_FCC_L, _FCC_G)
             case 0b0001:  # FBNE (not equal)
-                take_branch = fcc != FCC_E
+                take_branch = fcc != _FCC_E
             case 0b1001:  # FBE (equal)
-                take_branch = fcc == FCC_E
+                take_branch = fcc == _FCC_E
             case 0b1010:  # FBUE (unordered or equal)
-                take_branch = fcc in (FCC_U, FCC_E)
+                take_branch = fcc in (_FCC_U, _FCC_E)
             case 0b1011:  # FBGE (greater or equal)
-                take_branch = fcc in (FCC_G, FCC_E)
+                take_branch = fcc in (_FCC_G, _FCC_E)
             case 0b1100:  # FBUGE (unordered, greater or equal)
-                take_branch = fcc in (FCC_U, FCC_G, FCC_E)
+                take_branch = fcc in (_FCC_U, _FCC_G, _FCC_E)
             case 0b1101:  # FBLE (less or equal)
-                take_branch = fcc in (FCC_L, FCC_E)
+                take_branch = fcc in (_FCC_L, _FCC_E)
             case 0b1110:  # FBULE (unordered, less or equal)
-                take_branch = fcc in (FCC_U, FCC_L, FCC_E)
+                take_branch = fcc in (_FCC_U, _FCC_L, _FCC_E)
             case 0b1111:  # FBO (ordered)
-                take_branch = fcc != FCC_U
+                take_branch = fcc != _FCC_U
             case _:
                 raise ValueError(f"unknown FBfcc condition: {self.cond:#06b}")
 

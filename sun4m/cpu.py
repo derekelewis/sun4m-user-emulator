@@ -317,7 +317,7 @@ class FPUState:
     - Bits 31-30: Rounding direction (not currently implemented)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # 32 single-precision registers stored as raw 32-bit integers
         # (IEEE 754 binary32 representation)
         self.f: list[int] = [0] * 32
