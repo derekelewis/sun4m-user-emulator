@@ -27,6 +27,10 @@ ENOTTY = 25  # Not a typewriter (inappropriate ioctl for device)
 ESPIPE = 29  # Illegal seek
 ENOSYS = 38  # Function not implemented
 
+# Host platform NCCS (number of control characters in termios)
+# Linux uses 32, macOS uses 20
+HOST_NCCS = 20 if sys.platform == "darwin" else 32
+
 # Page size for memory alignment
 PAGE_SIZE = 4096
 
@@ -510,7 +514,8 @@ class Syscall:
         # VWERASE=14, VLNEXT=15
 
         # Create host cc array with proper mapping
-        host_cc = [0] * 32
+        # Use platform-specific size: macOS=20, Linux=32
+        host_cc = [0] * HOST_NCCS
         # Direct mappings (same index on both)
         for i in [0, 1, 2, 3, 8, 9, 10, 12, 13, 14, 15]:
             if i < len(sparc_cc):
