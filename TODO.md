@@ -94,8 +94,15 @@ TODOs
     - [x] gzip (compression/decompression)
     - [x] tar (create/extract archives with directory traversal)
     - [x] vi (interactive text editor with terminal support)
-7. Future work
-    - [x] Floating-point instructions (FPU)
+7. Floating-point (FPU)
+    - [x] FPUState with 32 FP registers and FSR
+    - [x] Load/Store: LDF, LDDF, STF, STDF, LDFSR, STFSR
+    - [x] Arithmetic: FADDs/d, FSUBs/d, FMULs/d, FDIVs/d, FSQRTs/d, FsMULd
+    - [x] Conversions: FiTOs/d, FsTOi, FdTOi, FsTOd, FdTOs
+    - [x] Utility: FMOVs, FNEGs, FABSs
+    - [x] Compare: FCMPs/d, FCMPEs/d
+    - [x] Branch: FBfcc (all 16 conditions)
+8. Future work
     - [ ] Memory protection (segment permissions)
     - [ ] Alignment trap handling (currently raises ValueError)
     - [ ] Window overflow/underflow traps (currently avoided with 64 windows)
