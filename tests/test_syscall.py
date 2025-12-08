@@ -907,6 +907,10 @@ class TestSyscallLlseek(unittest.TestCase):
         self.fd = self.cpu_state.registers.read_register(8)
 
     def tearDown(self):
+        # Close the fd
+        self.cpu_state.registers.write_register(1, 6)  # close
+        self.cpu_state.registers.write_register(8, self.fd)
+        self.syscall.handle()
         os.unlink(self.temp_file.name)
 
     def test_llseek_to_offset(self):
@@ -1144,6 +1148,11 @@ class TestSyscallGetdents64(unittest.TestCase):
 
             self.assertEqual(self.cpu_state.registers.read_register(8), 9)  # EBADF
             self.assertTrue(self.cpu_state.icc.c)
+
+            # Close the fd
+            self.cpu_state.registers.write_register(1, 6)  # close
+            self.cpu_state.registers.write_register(8, fd)
+            self.syscall.handle()
         finally:
             os.unlink(temp_file.name)
 
